@@ -74,6 +74,7 @@ class RealClaudeClient(ClaudeClient):
         self._meter = meter
         self._model = config.anthropic_model
         self._sdk = None  # lazily set on first use
+        self._temp_ok: bool | None = None  # SDK capability, detected once
 
     def _get_sdk(self):
         if self._sdk is None:
@@ -86,22 +87,42 @@ class RealClaudeClient(ClaudeClient):
             self._sdk = anthropic.Anthropic(api_key=self._config.anthropic_api_key)
         return self._sdk
 
+    def _supports_temperature(self, sdk) -> bool:
+        """Whether this SDK version accepts a top-level ``temperature``.
+
+        The anthropic SDK moved ``temperature`` out of ``messages.create()``'s
+        signature in 1.0; passing it raises TypeError there, while older versions
+        require it to control determinism. Detect once rather than pinning a
+        version, so the wrapper works across both.
+        """
+        if self._temp_ok is None:
+            try:
+                import inspect
+
+                params = inspect.signature(sdk.messages.create).parameters
+                self._temp_ok = "temperature" in params
+            except (TypeError, ValueError):  # pragma: no cover - exotic SDKs
+                self._temp_ok = False
+        return self._temp_ok
+
     def complete(self, *, system: str, prompt: str, max_tokens: int = 1024,
                  temperature: float = 0.3) -> str:
         # Guard spend BEFORE the network call.
         self._meter.ensure_budget()
         sdk = self._get_sdk()
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if self._supports_temperature(sdk):
+            kwargs["temperature"] = temperature
         attempt = 0
         while True:
             attempt += 1
             try:
-                resp = sdk.messages.create(
-                    model=self._model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    system=system,
-                    messages=[{"role": "user", "content": prompt}],
-                )
+                resp = sdk.messages.create(**kwargs)
             except Exception as exc:  # noqa: BLE001 - map vendor errors to ours
                 err = self._map_error(exc)
                 if err.retryable and attempt <= 3:
