@@ -15,8 +15,14 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
-# ── Generated slides / exports ──
-/generated/
+# ── Virtualenv ──
+.venv/
+venv/
+
+# ── Generated exports ──
+# generated/ is deliberately TRACKED: the exported playbooks and deck outlines
+# are the evidence artifacts that show the tool actually ran. Only the transient
+# real-Claude evidence directory is regenerated per pass.
 /output/
 
 # ── Editor / OS ──
