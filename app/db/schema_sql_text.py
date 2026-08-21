@@ -29,4 +29,22 @@ CREATE TABLE IF NOT EXISTS event_variables (
     value         TEXT NOT NULL,
     notes         TEXT
 );
+
+-- T11.5: append-only decision log. A revision inserts a NEW row and points the
+-- old row at it via superseded_by, so history is never destroyed.
+CREATE TABLE IF NOT EXISTS decisions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER NOT NULL,
+    step          TEXT NOT NULL,
+    question      TEXT NOT NULL,
+    options_json  TEXT NOT NULL,
+    chosen_key    TEXT,
+    decided_by    TEXT,
+    decided_at    TEXT,
+    note          TEXT,
+    superseded_by INTEGER REFERENCES decisions(id),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_event ON decisions(event_id, id);
 """

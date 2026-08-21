@@ -6,11 +6,13 @@ exposed in QR payloads or to the frontend.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Iterator, List, Optional
 
-from app.db.models import Attendee, Event, EventVariable
+from app.db.models import Attendee, Decision, DecisionOption, Event, EventVariable
 from app.db import schema_sql_text as _sql
 
 
@@ -96,3 +98,155 @@ def list_variables(conn: sqlite3.Connection, event_id: int) -> List[EventVariabl
             "SELECT * FROM event_variables WHERE event_id=?", (event_id,)
         ).fetchall()
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# T11.5 — decision log
+#
+# Append-only by design. ``record_decision`` inserts; ``revise_decision`` inserts
+# a successor and marks the predecessor superseded. Nothing is ever UPDATEd away,
+# so the coordinator can always answer "why did we change the venue?".
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DECISION_COLUMNS = (
+    "id, event_id, step, question, options_json, chosen_key, decided_by, "
+    "decided_at, note, superseded_by"
+)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _dump_options(options: List[DecisionOption]) -> str:
+    return json.dumps(
+        [
+            {"key": o.key, "label": o.label, "reasoning": o.reasoning, "data": o.data}
+            for o in options
+        ]
+    )
+
+
+def _load_options(raw: str) -> List[DecisionOption]:
+    return [
+        DecisionOption(
+            key=o["key"],
+            label=o["label"],
+            reasoning=o.get("reasoning", ""),
+            data=o.get("data") or {},
+        )
+        for o in json.loads(raw)
+    ]
+
+
+def _row_to_decision(row: sqlite3.Row) -> Decision:
+    return Decision(
+        id=row["id"],
+        event_id=row["event_id"],
+        step=row["step"],
+        question=row["question"],
+        options=_load_options(row["options_json"]),
+        chosen_key=row["chosen_key"],
+        decided_by=row["decided_by"],
+        decided_at=row["decided_at"],
+        note=row["note"],
+        superseded_by=row["superseded_by"],
+    )
+
+
+def _validate(decision: Decision) -> None:
+    if not decision.options:
+        raise ValueError("A decision must offer at least one option to the coordinator.")
+    if decision.chosen_key is not None:
+        keys = {o.key for o in decision.options}
+        if decision.chosen_key not in keys:
+            raise ValueError(
+                f"chosen_key {decision.chosen_key!r} is not among the offered options "
+                f"({sorted(keys)}); the tool must never record a choice it never offered."
+            )
+
+
+def record_decision(conn: sqlite3.Connection, decision: Decision) -> int:
+    """Persist a decision point. Returns the new decision id."""
+    _validate(decision)
+    decided_at = decision.decided_at
+    if decision.chosen_key is not None and not decided_at:
+        decided_at = _now()
+    cur = conn.execute(
+        "INSERT INTO decisions (event_id, step, question, options_json, chosen_key, "
+        "decided_by, decided_at, note) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            decision.event_id,
+            decision.step,
+            decision.question,
+            _dump_options(decision.options),
+            decision.chosen_key,
+            decision.decided_by,
+            decided_at,
+            decision.note,
+        ),
+    )
+    return int(cur.lastrowid)
+
+
+def get_decision(conn: sqlite3.Connection, decision_id: int) -> Optional[Decision]:
+    row = conn.execute(
+        f"SELECT {_DECISION_COLUMNS} FROM decisions WHERE id=?", (decision_id,)
+    ).fetchone()
+    return _row_to_decision(row) if row else None
+
+
+def revise_decision(
+    conn: sqlite3.Connection,
+    decision_id: int,
+    *,
+    chosen_key: Optional[str] = None,
+    note: Optional[str] = None,
+    decided_by: Optional[str] = None,
+    options: Optional[List[DecisionOption]] = None,
+) -> int:
+    """Supersede ``decision_id`` with a new row carrying the revised choice.
+
+    The original row is preserved verbatim and back-linked, so the playbook can
+    show "we picked A, then moved to B because <note>".
+    """
+    original = get_decision(conn, decision_id)
+    if original is None:
+        raise LookupError(f"No decision with id {decision_id}")
+    if original.superseded_by is not None:
+        raise ValueError(
+            f"Decision {decision_id} was already superseded by {original.superseded_by}; "
+            "revise the current one instead."
+        )
+
+    successor = Decision(
+        event_id=original.event_id,
+        step=original.step,
+        question=original.question,
+        options=options if options is not None else original.options,
+        chosen_key=chosen_key if chosen_key is not None else original.chosen_key,
+        decided_by=decided_by if decided_by is not None else original.decided_by,
+        note=note,
+    )
+    new_id = record_decision(conn, successor)
+    conn.execute("UPDATE decisions SET superseded_by=? WHERE id=?", (new_id, decision_id))
+    return new_id
+
+
+def current_decisions(conn: sqlite3.Connection, event_id: int) -> List[Decision]:
+    """Live decisions only (one per step), in the order the coordinator made them."""
+    rows = conn.execute(
+        f"SELECT {_DECISION_COLUMNS} FROM decisions "
+        "WHERE event_id=? AND superseded_by IS NULL ORDER BY id",
+        (event_id,),
+    ).fetchall()
+    return [_row_to_decision(r) for r in rows]
+
+
+def decision_history(conn: sqlite3.Connection, event_id: int) -> List[Decision]:
+    """Every decision ever recorded for the event, oldest first — append-only audit."""
+    rows = conn.execute(
+        f"SELECT {_DECISION_COLUMNS} FROM decisions WHERE event_id=? ORDER BY id",
+        (event_id,),
+    ).fetchall()
+    return [_row_to_decision(r) for r in rows]
