@@ -1,0 +1,144 @@
+/* ============================================================
+   Saronic Event Tool — theme.css
+   GENERATED FROM DESIGN.md (single source of truth).
+   Do not hand-edit hex values here; change DESIGN.md and re-export.
+   Font note: Archivo (expanded width) via Google Fonts; falls back
+   to Arial Black until self-hosted. Inter for body.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,600..800&family=Inter:wght@400;600&display=swap');
+
+:root {
+  /* colors — DESIGN.md colors.* */
+  --color-primary: #162029;
+  --color-secondary: #55636E;
+  --color-tertiary: #4C9FD8;
+  --color-neutral: #F2F6FA;
+  --color-background: #0C141B;
+  --color-surface: #1E2A35;
+  --color-steel: #9DA7AF;
+  --color-success: #27C281;
+  --color-warning: #F2B100;
+  --color-danger: #E5484D;
+
+  /* type */
+  --font-display: "Archivo", "Arial Black", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+
+  /* rounded / spacing — DESIGN.md scales */
+  --rounded-sm: 4px; --rounded-md: 8px; --rounded-lg: 16px; --rounded-xl: 24px;
+  --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-neutral);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* ── shell layout ─────────────────────────────────────────── */
+.shell { display: flex; min-height: 100vh; }
+
+.shell-nav {
+  width: 240px; flex-shrink: 0;
+  background: var(--color-primary);
+  padding: var(--space-lg) var(--space-md);
+  display: flex; flex-direction: column; gap: var(--space-lg);
+}
+.shell-nav .brand img { width: 100%; max-width: 180px; display: block; }
+
+.shell-main {
+  flex: 1; padding: var(--space-xl);
+  max-width: 960px;
+}
+
+/* ── stepper (workflow chain nav) ─────────────────────────── */
+.stepper { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.stepper a {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 10px 12px; border-radius: var(--rounded-md);
+  color: var(--color-steel); text-decoration: none;
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.8125rem; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+}
+.stepper a:hover { background: var(--color-surface); color: var(--color-neutral); }
+.stepper .is-active a { background: var(--color-surface); color: var(--color-neutral); box-shadow: inset 3px 0 0 var(--color-tertiary); }
+.stepper .is-done a::after { content: "✓"; margin-left: auto; color: var(--color-success); }
+.stepper .is-pending a::after { content: "•"; margin-left: auto; color: var(--color-warning); }
+
+/* ── headings ─────────────────────────────────────────────── */
+h1, h2, .eyebrow {
+  font-family: var(--font-display); font-stretch: 125%;
+  text-transform: uppercase; letter-spacing: 0.01em;
+}
+h1 { font-size: 3rem; font-weight: 700; line-height: 1.1; margin: 0 0 var(--space-md); }
+h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-lg) 0 var(--space-md); }
+.eyebrow { font-size: 0.875rem; font-weight: 600; letter-spacing: 0.10em; color: var(--color-steel); margin: 0 0 var(--space-sm); }
+.muted { color: var(--color-steel); }
+
+/* ── buttons ──────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-block; border: 0; cursor: pointer;
+  background: var(--color-tertiary); color: var(--color-background);
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.875rem; font-weight: 600; letter-spacing: 0.10em;
+  text-transform: uppercase; text-decoration: none;
+  padding: var(--space-md); border-radius: var(--rounded-md);
+}
+.btn-primary:hover { background: var(--color-neutral); }
+.btn-quiet {
+  background: transparent; color: var(--color-steel);
+  border: 1px solid var(--color-secondary); border-radius: var(--rounded-md);
+  padding: var(--space-md); cursor: pointer;
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.875rem; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+}
+.btn-quiet:hover { color: var(--color-neutral); border-color: var(--color-steel); }
+
+/* ── option cards (venue / audience / event-type slates) ──── */
+.option-list { display: flex; flex-direction: column; gap: var(--space-md); margin: 0; padding: 0; list-style: none; }
+
+.option-card {
+  background: var(--color-surface); color: var(--color-neutral);
+  border-radius: var(--rounded-lg); padding: var(--space-lg);
+  display: grid; grid-template-columns: 1fr auto; gap: var(--space-sm) var(--space-lg);
+  border: 1px solid transparent;
+}
+.option-card.is-chosen { border-color: var(--color-tertiary); }
+.option-card .option-label { font-family: var(--font-display); font-stretch: 125%; font-weight: 600; font-size: 1.125rem; }
+.option-card .option-meta { color: var(--color-steel); font-size: 0.875rem; display: flex; gap: var(--space-md); flex-wrap: wrap; }
+.option-card .option-reasoning { grid-column: 1 / -1; color: var(--color-steel); font-size: 0.9375rem; margin: 0; }
+.option-card .option-actions { grid-column: 1 / -1; display: flex; gap: var(--space-sm); margin-top: var(--space-sm); }
+
+/* fit badges — text-weight only; filled banners are reserved for scan states */
+.fit-badge {
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+  align-self: start; white-space: nowrap;
+}
+.fit-fits  { color: var(--color-steel); }
+.fit-tight { color: var(--color-warning); }
+.fit-under { color: var(--color-danger); }
+
+/* ── scan-state banners (QR check-in ONLY) ────────────────── */
+.scan-banner {
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 2rem; font-weight: 700; text-transform: uppercase;
+  color: var(--color-background); border-radius: var(--rounded-md);
+  padding: var(--space-md); text-align: center;
+}
+.scan-valid    { background: var(--color-success); }
+.scan-already  { background: var(--color-warning); }
+.scan-tampered { background: var(--color-danger); }
+
+/* ── open questions / pending callout ─────────────────────── */
+.pending-note {
+  border: 1px dashed var(--color-secondary); border-radius: var(--rounded-md);
+  padding: var(--space-md); color: var(--color-steel);
+}

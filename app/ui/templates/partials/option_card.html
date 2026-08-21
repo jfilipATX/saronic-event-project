@@ -1,0 +1,36 @@
+<!-- partials/option_card.html — one DecisionOption as a card.
+     Context: option (DecisionOption), step (str), event_id, chosen_key (or none).
+     Works for every slate (event type, audience, venue); venue options carry
+     data.fit / data.capacity / data.rating and get the badge + meta row. -->
+<li class="option-card {% if option.key == chosen_key %}is-chosen{% endif %}">
+  <span class="option-label">{{ option.label }}</span>
+
+  {% if option.data.fit %}
+    <span class="fit-badge fit-{{ option.data.fit }}">
+      {% if option.data.fit == 'fits' %}Fits
+      {% elif option.data.fit == 'tight' %}Tight fit
+      {% else %}Under capacity{% endif %}
+    </span>
+  {% endif %}
+
+  {% if option.data.capacity or option.data.rating %}
+  <div class="option-meta">
+    {% if option.data.capacity %}<span>Capacity {{ "{:,}".format(option.data.capacity) }}</span>{% endif %}
+    {% if option.data.rating %}<span>Rated {{ option.data.rating }}</span>{% endif %}
+    {% if option.data.city %}<span>{{ option.data.city }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- options-plus-reasoning contract: the "why" is always visible, never a tooltip -->
+  <p class="option-reasoning">{{ option.reasoning }}</p>
+
+  <div class="option-actions">
+    <form method="post" action="/events/{{ event_id }}/decide">
+      <input type="hidden" name="step" value="{{ step }}">
+      <input type="hidden" name="key" value="{{ option.key }}">
+      <button class="btn-primary" type="submit">
+        {% if option.key == chosen_key %}Chosen{% else %}Choose{% endif %}
+      </button>
+    </form>
+  </div>
+</li>

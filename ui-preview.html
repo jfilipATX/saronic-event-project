@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- ui-preview.html — static design proof for the venue step, sample data only.
+     Not shipped; exists so the shell/card design is verified rendered, not imagined. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Preview — Venue step</title>
+  <link rel="stylesheet" href="app/ui/static/theme.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="shell-nav">
+    <a class="brand" href="#"><img src="app/ui/static/brand/logo-on-dark.png" alt="Saronic"></a>
+    <div>
+      <p class="eyebrow">Corsair Demo Day</p>
+      <p class="muted" style="font-size:0.875rem; margin:0;">Austin, TX</p>
+    </div>
+    <ul class="stepper">
+      <li class="is-done"><a href="#">Event type</a></li>
+      <li class="is-done"><a href="#">Audience</a></li>
+      <li class="is-active"><a href="#">Venue</a></li>
+      <li class="is-todo"><a href="#">Slides</a></li>
+      <li class="is-todo"><a href="#">Check-in</a></li>
+      <li class="is-pending"><a href="#">Playbook</a></li>
+    </ul>
+  </nav>
+  <main class="shell-main">
+    <p class="eyebrow">Step 3 of 6</p>
+    <h1>Which venue should host the event?</h1>
+    <p class="muted">Review the options below — each carries its reasoning. Nothing is chosen until you choose it.</p>
+    <ul class="option-list">
+      <li class="option-card is-chosen">
+        <span class="option-label">Palmer Events Center</span>
+        <span class="fit-badge fit-fits">Fits</span>
+        <div class="option-meta"><span>Capacity 5,000</span><span>Rated 4.6</span><span>Austin</span></div>
+        <p class="option-reasoning">Capacity 5,000 vs estimate 4,000 — 1,000 seats of headroom. Rated 4.6. Downtown, load-in dock.</p>
+        <div class="option-actions"><button class="btn-primary">Chosen</button></div>
+      </li>
+      <li class="option-card">
+        <span class="option-label">Austin Convention Center Hall C</span>
+        <span class="fit-badge fit-tight">Tight fit</span>
+        <div class="option-meta"><span>Capacity 3,800</span><span>Rated 4.4</span><span>Austin</span></div>
+        <p class="option-reasoning">Capacity 3,800 vs estimate 4,000 — 5% under capacity, but tight rather than unworkable: still offered because standing room or staggered sessions can absorb it. Rated 4.4.</p>
+        <div class="option-actions"><button class="btn-primary">Choose</button></div>
+      </li>
+      <li class="option-card">
+        <span class="option-label">Moody Amphitheater</span>
+        <span class="fit-badge fit-under">Under capacity</span>
+        <div class="option-meta"><span>Capacity 3,000</span><span>Rated 4.7</span><span>Austin</span></div>
+        <p class="option-reasoning">Capacity 3,000 vs estimate 4,000 — 25% under capacity. Still offered because a smaller venue may be the right call on budget, or the event can be scoped down. Rated 4.7. 40% cheaper than downtown halls.</p>
+        <div class="option-actions"><button class="btn-primary">Choose</button></div>
+      </li>
+    </ul>
+    <h2 style="margin-top:48px;">Scan states (QR screen only)</h2>
+    <div style="display:grid; gap:16px;">
+      <div class="scan-banner scan-valid">Valid — Welcome</div>
+      <div class="scan-banner scan-already">Already scanned 18:42</div>
+      <div class="scan-banner scan-tampered">Invalid code</div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!-- home.html — event list + create form. extends base.html. -->
+{% extends "base.html" %}
+{% block title %}Saronic Event Tool{% endblock %}
+{% block content %}
+  <p class="eyebrow">Event Planning</p>
+  <h1>Saronic Event Tool</h1>
+  <p class="muted">
+    Plan an event as a chain of decisions. Every step offers options with the
+    reasoning behind them; you choose, and the choices compose into one
+    exportable playbook.
+  </p>
+
+  <h2>Start a new event</h2>
+  <form method="post" action="/events" class="option-actions">
+    <input type="text" name="name" placeholder="Event name" required
+           style="padding:0.6rem; margin-right:0.5rem;">
+    <input type="text" name="city" placeholder="City" required
+           style="padding:0.6rem; margin-right:0.5rem;">
+    <button class="btn-primary" type="submit">Create event</button>
+  </form>
+
+  {% if events %}
+    <h2>Events in progress</h2>
+    <ul class="option-list">
+      {% for e in events %}
+        <li class="option-card">
+          <span class="option-label">{{ e.name }}</span>
+          <div class="option-meta">
+            {% if e.city %}<span>{{ e.city }}</span>{% endif %}
+            {% if e.event_type %}<span>{{ e.event_type }}</span>{% endif %}
+            {% if e.audience_estimate %}<span>{{ "{:,}".format(e.audience_estimate) }} attendees</span>{% endif %}
+          </div>
+          <div class="option-actions">
+            <a class="btn-primary" href="/events/{{ e.id }}/playbook">Open playbook</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endblock %}

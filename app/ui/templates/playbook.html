@@ -1,0 +1,32 @@
+<!-- playbook.html — the composed playbook view + open questions.
+     Context: event, steps, sections (from compose_playbook), markdown_url. -->
+{% extends "base.html" %}
+{% block title %}Playbook — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Event Playbook</p>
+  <h1>{{ event.name }}</h1>
+
+  {% for section in sections %}
+    <h2>{{ section.title }}</h2>
+    {% if section.decision and not section.decision.is_pending %}
+      <ul class="option-list">
+        {% set option = section.decision.chosen_option %}
+        {% set step = section.decision.step %}
+        {% set event_id = event.id %}
+        {% set chosen_key = section.decision.chosen_key %}
+        {% include "partials/option_card.html" %}
+      </ul>
+      {% if section.rejected %}
+        <p class="muted">Also considered: {{ section.rejected | map(attribute='label') | join(', ') }}</p>
+      {% endif %}
+    {% else %}
+      <div class="pending-note">Open question — not decided yet.
+        <a href="{{ section.url }}" style="color: var(--color-tertiary);">Decide now</a>
+      </div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="option-actions" style="margin-top: var(--space-xl);">
+    <a class="btn-primary" href="{{ markdown_url }}">Export playbook (Markdown)</a>
+  </div>
+{% endblock %}

@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- base.html — workflow shell. Jinja2 template.
+     Blocks: title, content. Context: event (or none), steps (list of
+     {key, label, url, state in active|done|pending|todo}). -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Saronic Event Tool{% endblock %}</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="icon" href="/static/brand/mark-on-dark.png">
+</head>
+<body>
+<div class="shell">
+  <nav class="shell-nav">
+    <a class="brand" href="/">
+      <!-- image role: logo-on-dark (Saronic_Logo_Full--Light.png) -->
+      <img src="/static/brand/logo-on-dark.png" alt="Saronic">
+    </a>
+    {% if event %}
+    <div>
+      <p class="eyebrow">{{ event.name }}</p>
+      <p class="muted" style="font-size:0.875rem; margin:0;">{{ event.city }}</p>
+    </div>
+    <ul class="stepper">
+      {% for step in steps %}
+      <li class="is-{{ step.state }}">
+        <a href="{{ step.url }}">{{ step.label }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </nav>
+  <main class="shell-main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

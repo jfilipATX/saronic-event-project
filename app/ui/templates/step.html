@@ -1,0 +1,24 @@
+<!-- step.html — one decision step (event type / audience / venue).
+     Context: event, steps, step_key, decision (Decision with .question,
+     .options, .chosen_key, .is_pending). extends base.html. -->
+{% extends "base.html" %}
+{% block title %}{{ decision.question }} — Saronic Event Tool{% endblock %}
+{% block content %}
+  <p class="eyebrow">Step {{ step_index }} of {{ step_total }}</p>
+  <h1>{{ decision.question }}</h1>
+
+  {% if decision.is_pending %}
+    <p class="muted">Review the options below — each carries its reasoning.
+    Nothing is chosen until you choose it.</p>
+  {% else %}
+    <p class="muted">You chose <strong>{{ decision.chosen_option.label }}</strong>.
+    Picking a different option revises the decision and re-stages everything
+    downstream (the log keeps the history).</p>
+  {% endif %}
+
+  <ul class="option-list">
+    {% for option in decision.options %}
+      {% include "partials/option_card.html" %}
+    {% endfor %}
+  </ul>
+{% endblock %}
