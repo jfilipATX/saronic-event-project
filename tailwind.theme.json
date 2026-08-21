@@ -1,0 +1,91 @@
+{
+  "theme": {
+    "extend": {
+      "colors": {
+        "primary": "#162029",
+        "secondary": "#55636e",
+        "tertiary": "#4c9fd8",
+        "neutral": "#f2f6fa",
+        "background": "#0c141b",
+        "surface": "#1e2a35",
+        "steel": "#9da7af",
+        "success": "#27c281",
+        "warning": "#f2b100",
+        "danger": "#e5484d"
+      },
+      "fontFamily": {
+        "display-xl": [
+          "Archivo Expanded"
+        ],
+        "h1": [
+          "Archivo Expanded"
+        ],
+        "h2": [
+          "Archivo Expanded"
+        ],
+        "body-lg": [
+          "Inter"
+        ],
+        "body-md": [
+          "Inter"
+        ],
+        "label": [
+          "Archivo Expanded"
+        ]
+      },
+      "fontSize": {
+        "display-xl": [
+          "6rem",
+          {
+            "letterSpacing": "0.01em",
+            "fontWeight": "800"
+          }
+        ],
+        "h1": [
+          "3rem",
+          {
+            "letterSpacing": "0.01em",
+            "fontWeight": "700"
+          }
+        ],
+        "h2": [
+          "2rem",
+          {
+            "fontWeight": "700"
+          }
+        ],
+        "body-lg": [
+          "1.25rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "body-md": [
+          "1rem",
+          {
+            "fontWeight": "400"
+          }
+        ],
+        "label": [
+          "0.875rem",
+          {
+            "letterSpacing": "0.1em",
+            "fontWeight": "600"
+          }
+        ]
+      },
+      "borderRadius": {
+        "sm": "4px",
+        "md": "8px",
+        "lg": "16px",
+        "xl": "24px"
+      },
+      "spacing": {
+        "sm": "8px",
+        "md": "16px",
+        "lg": "24px",
+        "xl": "40px"
+      }
+    }
+  }
+}

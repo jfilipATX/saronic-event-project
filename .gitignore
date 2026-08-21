@@ -1,0 +1,25 @@
+# ── Secrets — never commit ──
+.env
+.env.*
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# ── Database (generated at runtime) ──
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Generated slides / exports ──
+/generated/
+/output/
+
+# ── Editor / OS ──
+.vscode/
+.idea/
+.DS_Store
