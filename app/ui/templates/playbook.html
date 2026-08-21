@@ -21,12 +21,12 @@
       {% endif %}
     {% else %}
       <div class="pending-note">Open question — not decided yet.
-        <a href="{{ section.url }}" style="color: var(--color-tertiary);">Decide now</a>
+        <a href="{{ section.url }}" class="link-accent">Decide now</a>
       </div>
     {% endif %}
   {% endfor %}
 
-  <div class="option-actions" style="margin-top: var(--space-xl);">
+  <div class="option-actions mt-xl">
     <a class="btn-primary" href="{{ markdown_url }}">Export playbook (Markdown)</a>
   </div>
 {% endblock %}

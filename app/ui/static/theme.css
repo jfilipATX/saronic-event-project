@@ -169,6 +169,11 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   margin-top: var(--space-sm);
 }
 
+/* ── utilities ─────────────────────────────────────────────── */
+.link-accent { color: var(--color-tertiary); }
+.mt-xl { margin-top: var(--space-xl); }
+.nav-sub { font-size: 0.875rem; margin: 0; }
+
 /* ── open questions / pending callout ─────────────────────── */
 .pending-note {
   border: 1px dashed var(--color-secondary); border-radius: var(--rounded-md);
