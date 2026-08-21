@@ -267,11 +267,17 @@ def create_app(db_path: str = "events.db") -> FastAPI:
 
     def _deck(conn, event_id: int):
         # Stock imagery is optional; brand roles resolve offline either way.
+        from app.claude.client import get_client
         from app.config import CONFIG
         from app.providers.registry import get_image_provider
 
         stock = get_image_provider(CONFIG) if CONFIG.pexels_api_key else None
-        return build_deck(compose_playbook(conn, event_id), ImageResolver(stock))
+        # Only hand the deck a client when real Claude is explicitly enabled.
+        # In mock mode the deck uses deterministic copy rather than rendering
+        # mock scaffolding onto a title slide.
+        claude = get_client(CONFIG) if CONFIG.claude_enabled else None
+        return build_deck(compose_playbook(conn, event_id), ImageResolver(stock),
+                          claude_client=claude)
 
     @app.get("/events/{event_id}/slides", response_class=HTMLResponse)
     def slides_view(request: Request, event_id: int):

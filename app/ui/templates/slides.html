@@ -22,6 +22,8 @@
         <div class="option-meta">
           <span>{{ slide.kind }}</span>
           {% if slide.image_role %}<span>image-role: {{ slide.image_role }}</span>{% endif %}
+          {% if slide.copy_source == 'claude' %}<span>copy: Claude</span>
+          {% elif slide.copy_source == 'fallback' %}<span>copy: deterministic</span>{% endif %}
         </div>
         {% if slide.body %}
           <p class="option-reasoning">{{ slide.body }}</p>

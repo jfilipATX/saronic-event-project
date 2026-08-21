@@ -16,6 +16,7 @@ from typing import List, Optional
 
 from app.features.images import ImageResolver
 from app.features.playbook import Playbook
+from app.features.slide_copy import generate_title_copy
 
 
 @dataclass
@@ -27,6 +28,8 @@ class Slide:
     image_role: Optional[str] = None
     image_url: Optional[str] = None
     notes: str = ""
+    #: "claude" | "fallback" | None — honest attribution for generated copy.
+    copy_source: Optional[str] = None
 
 
 @dataclass
@@ -41,8 +44,15 @@ def _image(resolver: ImageResolver, role: str, city: str = "") -> Optional[str]:
     return asset.url if asset else None
 
 
-def build_deck(playbook: Playbook, resolver: ImageResolver) -> Deck:
-    """Compose the slide sequence for ``playbook``."""
+def build_deck(playbook: Playbook, resolver: ImageResolver,
+               claude_client=None) -> Deck:
+    """Compose the slide sequence for ``playbook``.
+
+    ``claude_client`` is optional. When supplied, the title slide's copy is
+    written by Claude (grounded in the coordinator's decisions); otherwise it
+    falls back to deterministic text. Every other slide is deterministic by
+    design — venue fit and audience bracketing are arithmetic, not language.
+    """
     ev = playbook.event
     city = ev.city or ""
     slides: List[Slide] = []
@@ -51,13 +61,31 @@ def build_deck(playbook: Playbook, resolver: ImageResolver) -> Deck:
     subtitle_bits = [b for b in (ev.city, ev.event_type) if b]
     if ev.audience_estimate:
         subtitle_bits.append(f"{ev.audience_estimate:,} attendees")
+
+    venue_label = next(
+        (s.chosen_label for s in playbook.sections if s.step == "venue"), None
+    )
+    copy = generate_title_copy(
+        claude_client,
+        name=ev.name,
+        city=ev.city,
+        event_type=ev.event_type,
+        audience=ev.audience_estimate,
+        venue=venue_label,
+    )
+    title_notes = (
+        "Dark overlay at 60% so title text stays AA over the hero image."
+        + (" Copy written by Claude." if copy.source == "claude"
+           else " Copy generated deterministically (Claude not in use).")
+    )
     slides.append(Slide(
         kind="title",
-        title=ev.name,
-        body=" · ".join(subtitle_bits),
+        title=copy.headline,
+        body=copy.subhead if copy.source == "claude" else " · ".join(subtitle_bits),
         image_role="hero-16x9",
         image_url=_image(resolver, "hero-16x9", city),
-        notes="Dark overlay at 60% so title text stays AA over the hero image.",
+        notes=title_notes,
+        copy_source=copy.source,
     ))
 
     # ── One slide per settled decision ──
