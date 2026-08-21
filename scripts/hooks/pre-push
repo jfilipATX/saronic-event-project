@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pre-push secret audit. Blocks the push if anything key-shaped is found in the
+# working tree or ANY commit in history.
+#
+# Install (not tracked by git, so this must be run once per clone):
+#   ln -sf ../../scripts/hooks/pre-push .git/hooks/pre-push
+#
+# Bypass only with a deliberate --no-verify, which should be an eyebrow-raiser.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+python_bin="$repo_root/.venv/bin/python"
+[ -x "$python_bin" ] || python_bin="python3"
+
+echo "pre-push: running secret audit…"
+if ! "$python_bin" "$repo_root/scripts/audit_secrets.py"; then
+  echo ""
+  echo "PUSH BLOCKED: secret audit failed."
+  echo "Publishing a key is one-way — rotate it rather than force-pushing over it."
+  exit 1
+fi
