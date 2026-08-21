@@ -11,6 +11,7 @@ either side to match.
 from __future__ import annotations
 
 import os
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from typing import List, Optional
@@ -21,13 +22,72 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
+from app.db.models import Attendee
+from app.features.deck import build_deck, render_deck_markdown
+from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
+from app.features.qr_checkin import (
+    STATE_ALREADY,
+    STATE_TAMPERED,
+    STATE_VALID,
+    check_in,
+    mint_code,
+    self_check_in,
+)
 from app.features.workflow import CHAIN, CoordinatorWorkflow
 
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
 #: Stepper labels for the nav. Chain steps first, then the derived views.
-_NAV = [(key, STEP_TITLES.get(key, key)) for key in CHAIN] + [("playbook", "Playbook")]
+_NAV = (
+    [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
+    + [("slides", "Slides"), ("checkin", "Check-in"), ("playbook", "Playbook")]
+)
+
+#: Set by create_app so helpers/tests can reach the active database.
+CURRENT_DB = "events.db"
+
+
+def _signing_secret() -> str:
+    """HMAC secret for check-in tokens.
+
+    Server-side only and never rendered. A dev fallback keeps the prototype
+    runnable without configuration, but it is derived per-process so tokens
+    minted in one run cannot be replayed against another.
+    """
+    from app.config import CONFIG
+
+    if CONFIG.event_signing_secret:
+        return CONFIG.event_signing_secret
+    global _DEV_SECRET
+    if _DEV_SECRET is None:
+        _DEV_SECRET = secrets.token_hex(32)
+    return _DEV_SECRET
+
+
+_DEV_SECRET: Optional[str] = None
+
+
+def issue_invite(db_path: str, event_id: int, full_name: str,
+                 email: Optional[str] = None) -> str:
+    """Mint a signed credential for an invitee and store the attendee row.
+
+    Exposed at module level because inviting people is a pre-event admin action,
+    not part of the coordinator's decision chain.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.executescript(sql.SCHEMA)
+        placeholder = repo.add_attendee(conn, Attendee(
+            event_id=event_id, full_name=full_name, email=email))
+        code = mint_code(_signing_secret(), invite_id=placeholder)
+        conn.execute("UPDATE attendees SET checkin_code=? WHERE id=?",
+                     (code, placeholder))
+        conn.commit()
+        return code
+    finally:
+        conn.close()
 
 
 @dataclass
@@ -49,6 +109,8 @@ class PlaybookSectionVM:
 
 
 def create_app(db_path: str = "events.db") -> FastAPI:
+    global CURRENT_DB
+    CURRENT_DB = db_path
     app = FastAPI(title="Saronic Event Tool")
     app.mount("/static", StaticFiles(directory=os.path.join(_UI_DIR, "static")),
               name="static")
@@ -73,6 +135,9 @@ def create_app(db_path: str = "events.db") -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
+            elif key in ("slides", "checkin"):
+                state = "active" if current == key else "todo"
+                url = f"/events/{event_id}/{key}"
             else:
                 d = live.get(key)
                 if current == key:
@@ -197,6 +262,87 @@ def create_app(db_path: str = "events.db") -> FastAPI:
             return render_markdown(compose_playbook(conn, event_id))
         finally:
             conn.close()
+
+    # ── slides (T10/T11 in the shell) ────────────────────────────────────────
+
+    def _deck(conn, event_id: int):
+        # Stock imagery is optional; brand roles resolve offline either way.
+        from app.config import CONFIG
+        from app.providers.registry import get_image_provider
+
+        stock = get_image_provider(CONFIG) if CONFIG.pexels_api_key else None
+        return build_deck(compose_playbook(conn, event_id), ImageResolver(stock))
+
+    @app.get("/events/{event_id}/slides", response_class=HTMLResponse)
+    def slides_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            deck = _deck(conn, event_id)
+            return templates.TemplateResponse(request, "slides.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "slides"),
+                "deck": deck,
+                "event_id": event_id,
+                "markdown_url": f"/events/{event_id}/slides.md",
+            })
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/slides.md", response_class=PlainTextResponse)
+    def slides_markdown(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    # ── check-in (day-of operation) ──────────────────────────────────────────
+
+    def _checkin_page(request: Request, conn, event_id: int, event,
+                      scan_state: Optional[str] = None, scan_name: str = ""):
+        return templates.TemplateResponse(request, "checkin.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "checkin"),
+            "event_id": event_id,
+            "attendees": repo.list_attendees(conn, event_id),
+            "scan_state": scan_state,
+            "scan_name": scan_name,
+        })
+
+    @app.get("/events/{event_id}/checkin", response_class=HTMLResponse)
+    def checkin_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            return _checkin_page(request, conn, event_id, event)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/checkin", response_class=HTMLResponse)
+    def checkin_scan(request: Request, event_id: int, code: str = Form(...)):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            state, attendee = check_in(conn, _signing_secret(), code)
+            conn.commit()
+            name = attendee.full_name if attendee else ""
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=state, scan_name=name)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/checkin/walkin")
+    def checkin_walkin(event_id: int, full_name: str = Form(...)):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            self_check_in(conn, event_id, full_name)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/checkin", status_code=303)
 
     return app
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.providers.base import (
     AudienceProvider,
+    ImageAsset,
     ImageProvider,
     Venue,
     VenueProvider,
@@ -33,10 +34,63 @@ class RealAudienceProvider(AudienceProvider):
 
 
 class RealImageProvider(ImageProvider):
-    """Wire to Pexels (PEXELS_API_KEY) + Saronic local/URL media folder."""
+    """Pexels-backed stock imagery for context roles only.
+
+    Never serves brand roles — ``app.features.images`` keeps BRAND_ROLES and
+    STOCK_ROLES disjoint, so Saronic hardware can never be substituted by stock.
+
+    Fails soft on purpose: a network error, a bad key, or a rate limit returns
+    an empty list rather than raising, because a missing city photo must never
+    take down a deck that is otherwise fully resolved from owned assets.
+    """
+
+    #: Pexels caps at 200 requests/hour on the free tier; keep calls small.
+    _ENDPOINT = "https://api.pexels.com/v1/search"
+    _TIMEOUT = 8
 
     def __init__(self, config) -> None:
         self._config = config
 
     def fetch(self, query: str, role: str, limit: int = 5):
-        raise NotImplementedError("Real image provider not wired in mock mode.")
+        key = getattr(self._config, "pexels_api_key", "")
+        if not key or not query.strip():
+            return []
+
+        import json
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        params = urllib.parse.urlencode({
+            "query": f"{query} skyline" if role == "city-stock" else query,
+            "per_page": max(1, min(int(limit), 15)),
+            "orientation": "landscape",
+        })
+        req = urllib.request.Request(
+            f"{self._ENDPOINT}?{params}",
+            headers={
+                "Authorization": key,  # server-side only; never rendered
+                # Pexels sits behind Cloudflare, which rejects the default
+                # urllib agent with 403 (error 1010) regardless of a valid key.
+                # A real UA is required, not optional.
+                "User-Agent": "SaronicEventTool/1.0 (+https://saronic.com)",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self._TIMEOUT) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            return []
+
+        assets = []
+        for photo in payload.get("photos", []):
+            src = (photo.get("src") or {}).get("landscape") or (photo.get("src") or {}).get("large")
+            if not src:
+                continue
+            assets.append(ImageAsset(
+                url=src,
+                role=role,
+                caption=photo.get("alt") or f"{query} ({photo.get('photographer', 'Pexels')})",
+            ))
+        return assets

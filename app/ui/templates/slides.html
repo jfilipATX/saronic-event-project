@@ -1,0 +1,42 @@
+<!-- slides.html — deck preview. Context: event, steps, deck, markdown_url. -->
+{% extends "base.html" %}
+{% block title %}Slides — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Presentation</p>
+  <h1>{{ deck.event_name }}</h1>
+
+  {% if deck.is_draft %}
+    <div class="pending-note">
+      <strong>DRAFT</strong> — decisions are still open, so this deck reflects an
+      unfinished plan. Answer the remaining questions before presenting.
+    </div>
+  {% else %}
+    <p class="muted">Every slide is generated from the playbook, so the deck
+    cannot claim anything the decision log does not support.</p>
+  {% endif %}
+
+  <ul class="option-list">
+    {% for slide in deck.slides %}
+      <li class="option-card">
+        <span class="option-label">{{ loop.index }}. {{ slide.title }}</span>
+        <div class="option-meta">
+          <span>{{ slide.kind }}</span>
+          {% if slide.image_role %}<span>image-role: {{ slide.image_role }}</span>{% endif %}
+        </div>
+        {% if slide.body %}
+          <p class="option-reasoning">{{ slide.body }}</p>
+        {% endif %}
+        {% if slide.image_role and not slide.image_url %}
+          <p class="muted">Image unavailable — falls back to a solid brand surface.</p>
+        {% endif %}
+        {% if slide.notes %}
+          <p class="muted">{{ slide.notes }}</p>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <div class="option-actions" style="margin-top: var(--space-xl);">
+    <a class="btn-primary" href="{{ markdown_url }}">Export outline (Markdown)</a>
+  </div>
+{% endblock %}
