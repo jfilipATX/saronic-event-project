@@ -321,10 +321,16 @@ def create_app(db_path: str = "events.db") -> FastAPI:
             conn.close()
 
     @app.post("/events/{event_id}/checkin", response_class=HTMLResponse)
-    def checkin_scan(request: Request, event_id: int, code: str = Form(...)):
+    def checkin_scan(request: Request, event_id: int, code: str = Form("")):
         conn = connect()
         try:
             event = load_event(conn, event_id)
+            if not code.strip():
+                # Fat-fingered/empty scan: re-render the desk with the tampered
+                # banner instead of FastAPI's raw 422 JSON, which a door
+                # operator can't act on.
+                return _checkin_page(request, conn, event_id, event,
+                                     scan_state="tampered", scan_name="")
             state, attendee = check_in(conn, _signing_secret(), code)
             conn.commit()
             name = attendee.full_name if attendee else ""

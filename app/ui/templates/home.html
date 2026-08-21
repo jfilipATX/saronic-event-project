@@ -11,11 +11,9 @@
   </p>
 
   <h2>Start a new event</h2>
-  <form method="post" action="/events" class="option-actions">
-    <input type="text" name="name" placeholder="Event name" required
-           style="padding:0.6rem; margin-right:0.5rem;">
-    <input type="text" name="city" placeholder="City" required
-           style="padding:0.6rem; margin-right:0.5rem;">
+  <form method="post" action="/events" class="form-row">
+    <input class="input" type="text" name="name" placeholder="Event name" required>
+    <input class="input" type="text" name="city" placeholder="City" required>
     <button class="btn-primary" type="submit">Create event</button>
   </form>
 
@@ -36,5 +34,8 @@
         </li>
       {% endfor %}
     </ul>
+  {% else %}
+    <div class="pending-note">No events yet — create your first one above and the
+    tool will stage the decision chain (event type → audience → venue) for you.</div>
   {% endif %}
 {% endblock %}

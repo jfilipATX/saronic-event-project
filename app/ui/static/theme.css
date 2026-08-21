@@ -137,6 +137,38 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .scan-already  { background: var(--color-warning); }
 .scan-tampered { background: var(--color-danger); }
 
+/* ── form inputs (dark-surface, token-driven) ─────────────── */
+.input {
+  background: var(--color-surface);
+  color: var(--color-neutral);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--rounded-md);
+  padding: 12px var(--space-md);
+  font-family: var(--font-body);
+  font-size: 1rem;
+}
+.input::placeholder { color: var(--color-steel); }
+.input:focus {
+  outline: 2px solid var(--color-tertiary);
+  outline-offset: 1px;
+  border-color: var(--color-tertiary);
+}
+.form-row {
+  display: flex; gap: var(--space-sm); flex-wrap: wrap;
+  align-items: stretch; margin: var(--space-md) 0 var(--space-lg);
+}
+.form-row .input { flex: 1 1 16rem; }
+
+/* scan banner detail line — instructions under the verdict stay readable
+   without shouting at 2rem */
+.scan-banner .scan-detail {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 1rem; font-weight: 600;
+  text-transform: none; letter-spacing: 0;
+  margin-top: var(--space-sm);
+}
+
 /* ── open questions / pending callout ─────────────────────── */
 .pending-note {
   border: 1px dashed var(--color-secondary); border-radius: var(--rounded-md);

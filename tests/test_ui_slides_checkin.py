@@ -91,6 +91,14 @@ class TestCheckinScreen:
                         data={"code": "1.1700000000." + "f" * 64})
         assert "scan-tampered" in r.text
 
+    def test_empty_scan_rerenders_desk_not_422(self, client, planned):
+        # A fat-fingered empty scan must give the door operator the tampered
+        # banner on the same page, never FastAPI's raw 422 JSON.
+        for payload in ({"code": ""}, {"code": "   "}, {}):
+            r = client.post(f"/events/{planned}/checkin", data=payload)
+            assert r.status_code == 200
+            assert "scan-tampered" in r.text
+
     def test_walk_in_can_self_add(self, client, planned):
         r = client.post(f"/events/{planned}/checkin/walkin",
                         data={"full_name": "Walk In"}, follow_redirects=True)

@@ -17,24 +17,24 @@
     </div>
   {% elif scan_state == 'tampered' %}
     <div class="scan-banner scan-tampered">
-      Not a valid credential. Do not admit on this code — add as a walk-in if
-      the guest is expected.
+      Not a valid credential.
+      <span class="scan-detail">Do not admit on this code — add as a walk-in
+      below if the guest is expected.</span>
     </div>
   {% endif %}
 
   <h2>Scan a credential</h2>
-  <form method="post" action="/events/{{ event_id }}/checkin" class="option-actions">
-    <input type="text" name="code" placeholder="Scan or paste check-in code"
-           autofocus required style="padding:0.6rem; min-width:22rem; margin-right:0.5rem;">
+  <form method="post" action="/events/{{ event_id }}/checkin" class="form-row">
+    <input class="input" type="text" name="code" placeholder="Scan or paste check-in code"
+           autofocus required>
     <button class="btn-primary" type="submit">Check in</button>
   </form>
 
   <h2>Walk-in</h2>
   <p class="muted">No credential — recorded as self-reported, kept distinct from
   signature-verified arrivals.</p>
-  <form method="post" action="/events/{{ event_id }}/checkin/walkin" class="option-actions">
-    <input type="text" name="full_name" placeholder="Guest name" required
-           style="padding:0.6rem; margin-right:0.5rem;">
+  <form method="post" action="/events/{{ event_id }}/checkin/walkin" class="form-row">
+    <input class="input" type="text" name="full_name" placeholder="Guest name" required>
     <button class="btn-primary" type="submit">Add walk-in</button>
   </form>
 
