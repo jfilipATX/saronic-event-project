@@ -60,11 +60,24 @@ def add_attendee(conn: sqlite3.Connection, attendee: Attendee) -> int:
     return int(cur.lastrowid)
 
 
+def _row_to_attendee(row: sqlite3.Row) -> Attendee:
+    """Hydrate an attendee, restoring types SQLite cannot represent.
+
+    SQLite has no boolean type: ``self_reported`` goes in as 1/0 and comes back
+    as an int. Leaving it as an int makes every ``is True`` check silently fail
+    and lets a walk-in be mistaken for a verified attendee, so the conversion
+    happens here, once, rather than at each call site.
+    """
+    data = dict(row)
+    data["self_reported"] = bool(data.get("self_reported", 0))
+    return Attendee(**data)
+
+
 def get_attendee_by_code(conn: sqlite3.Connection, checkin_code: str) -> Optional[Attendee]:
     row = conn.execute(
         "SELECT * FROM attendees WHERE checkin_code=?", (checkin_code,)
     ).fetchone()
-    return Attendee(**dict(row)) if row else None
+    return _row_to_attendee(row) if row else None
 
 
 def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str) -> None:
@@ -76,7 +89,7 @@ def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str) -> None
 
 def list_attendees(conn: sqlite3.Connection, event_id: int) -> List[Attendee]:
     return [
-        Attendee(**dict(r))
+        _row_to_attendee(r)
         for r in conn.execute(
             "SELECT * FROM attendees WHERE event_id=?", (event_id,)
         ).fetchall()
