@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.db import repository as repo, schema_sql_text as sql
 from app.db.models import Decision, DecisionOption, Event, EventVariable
 from app.features.playbook import compose_playbook, render_markdown
+from app.features.venue_options import build_venue_options
 from app.providers.mock.providers import (
     MockAudienceProvider,
     MockVenueProvider,
@@ -49,22 +50,11 @@ repo.record_decision(conn, Decision(
     ],
     chosen_key=str(audience), decided_by="coordinator"))
 
-# ── Step 3: venue. Offer the FULL slate, flagged for fit — the tool must not
-# silently filter away an option the human might accept for budget reasons.
-all_venues = MockVenueProvider().search(CITY, 0)
-opts = [
-    DecisionOption(
-        key=v.name.lower().replace(" ", "-"),
-        label=v.name,
-        reasoning=(
-            f"Capacity {v.capacity:,} vs estimate {audience:,} "
-            f"({'fits' if v.capacity >= audience else 'UNDER capacity'}); "
-            f"rated {v.rating}. {v.notes}"
-        ),
-        data={"capacity": v.capacity, "rating": v.rating,
-              "fits": v.capacity >= audience},
-    ) for v in all_venues
-]
+# ── Step 3: venue. The provider reports the full slate; venue_options flags fit.
+# No audience=0 trick — the real audience goes in and nothing is dropped.
+all_venues = MockVenueProvider().search(CITY, audience)
+opts = build_venue_options(all_venues, audience)
+assert len(opts) == len(all_venues), "presentation layer must not hide venues"
 assert len(opts) > 1, "smoke needs a multi-option slate to exercise revision"
 vid = repo.record_decision(conn, Decision(
     event_id=eid, step="venue",
@@ -72,7 +62,8 @@ vid = repo.record_decision(conn, Decision(
     options=opts, chosen_key=opts[0].key, decided_by="coordinator"))
 
 # ── The human changes their mind: revision must not destroy history. ──
-repo.revise_decision(conn, vid, chosen_key=opts[1].key,
+under = next((o for o in opts if o.data["fit"] == "under"), opts[-1])
+repo.revise_decision(conn, vid, chosen_key=under.key,
                      note="Budget cut; downsizing venue.")
 
 repo.add_variable(conn, EventVariable(

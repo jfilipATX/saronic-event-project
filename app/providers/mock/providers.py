@@ -33,11 +33,16 @@ _CITY_STOCK = {
 
 
 class MockVenueProvider(VenueProvider):
+    """Reports every venue in the city. Deliberately does NOT filter by capacity.
+
+    Filtering here would be the provider making a decision that belongs to the
+    human coordinator — a 3,000-seat hall is a perfectly valid answer to a 6,000
+    estimate if the budget just got cut. Fit is classified and surfaced by
+    ``app.features.venue_options``, which flags rather than hides.
+    """
+
     def search(self, city: str, audience: int) -> list[Venue]:
-        venues = _MOCK_VENUES.get(city.strip().lower(), [])
-        # Prefer venues that fit the expected audience.
-        fitting = [v for v in venues if v.capacity >= audience]
-        return fitting or venues[:3]
+        return list(_MOCK_VENUES.get(city.strip().lower(), []))
 
 
 class MockAudienceProvider(AudienceProvider):

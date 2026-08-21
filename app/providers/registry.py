@@ -24,7 +24,7 @@ from app.providers.mock.providers import (
 def get_venue_provider(config: Optional[Config] = None) -> VenueProvider:
     config = config or Config()
     if config.provider_mode == "real":
-        from app.providers.real.venue import RealVenueProvider  # lazy import
+        from app.providers.real.providers import RealVenueProvider  # lazy import
         return RealVenueProvider(config)
     return MockVenueProvider()
 
@@ -32,7 +32,7 @@ def get_venue_provider(config: Optional[Config] = None) -> VenueProvider:
 def get_audience_provider(config: Optional[Config] = None) -> AudienceProvider:
     config = config or Config()
     if config.provider_mode == "real":
-        from app.providers.real.audience import RealAudienceProvider
+        from app.providers.real.providers import RealAudienceProvider
         return RealAudienceProvider(config)
     return MockAudienceProvider()
 
@@ -40,6 +40,6 @@ def get_audience_provider(config: Optional[Config] = None) -> AudienceProvider:
 def get_image_provider(config: Optional[Config] = None) -> ImageProvider:
     config = config or Config()
     if config.provider_mode == "real":
-        from app.providers.real.images import RealImageProvider
+        from app.providers.real.providers import RealImageProvider
         return RealImageProvider(config)
     return MockImageProvider()
