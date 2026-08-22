@@ -37,4 +37,11 @@
       {% include "partials/option_card.html" %}
     {% endfor %}
   </ul>
+  {% if step_key == 'venue' %}
+    <p class="mt-xl">
+      <a class="link-accent" href="/events/{{ event_id }}/venues/add">
+        Add a venue by URL</a>
+      — paste a venue's page and we'll read its capacity and amenities.
+    </p>
+  {% endif %}
 {% endblock %}

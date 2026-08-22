@@ -530,3 +530,32 @@ def set_event_window(conn: sqlite3.Connection, event_id: int, window) -> None:
     """Store an event's start/end. Pass a cleared window to unschedule."""
     conn.execute("UPDATE events SET starts_at=?, ends_at=? WHERE id=?",
                  (window.start, window.end, event_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P4-1 — coordinator-added venues (scraped from a URL)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def add_custom_venue(conn: sqlite3.Connection, event_id: int, venue) -> int:
+    cur = conn.execute(
+        "INSERT INTO custom_venues (event_id, venue_ref, name, city, capacity, "
+        "website, notes, source_url) VALUES (?,?,?,?,?,?,?,?)",
+        (event_id, venue.venue_ref, venue.name, venue.city, venue.capacity,
+         venue.website, venue.notes, venue.website),
+    )
+    return int(cur.lastrowid)
+
+
+def custom_venues(conn: sqlite3.Connection, event_id: int) -> List:
+    from app.providers.base import Venue
+
+    rows = conn.execute(
+        "SELECT * FROM custom_venues WHERE event_id=? ORDER BY id", (event_id,)
+    ).fetchall()
+    return [
+        Venue(name=r["name"], city=r["city"] or "", capacity=r["capacity"],
+              rating=0.0, notes=r["notes"] or "", website=r["website"],
+              venue_ref=r["venue_ref"])
+        for r in rows
+    ]

@@ -74,6 +74,21 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS custom_venues (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    venue_ref  TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    city       TEXT,
+    capacity   INTEGER NOT NULL,
+    website    TEXT,
+    notes      TEXT,
+    source_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_venues_event ON custom_venues(event_id);
+
 CREATE TABLE IF NOT EXISTS spend_log (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id      INTEGER,

@@ -87,7 +87,11 @@ class CoordinatorWorkflow:
         event = repo.get_event(self.conn, event_id)
         audience = event.audience_estimate or 0
         city = event.city or ""
-        venues = self._venues.search(city, audience)
+        venues = list(self._venues.search(city, audience))
+        # Coordinator-added venues (P4-1) join the same slate: once confirmed
+        # they are venues like any other, and must be rated and sorted by the
+        # same fit rules rather than living in a separate list.
+        venues.extend(repo.custom_venues(self.conn, event_id))
         options = build_venue_options(
             venues, audience,
             favourites=repo.favourites(self.conn),
@@ -196,6 +200,26 @@ class CoordinatorWorkflow:
         self._invalidate_downstream(event_id, step)
         self._stage_next_after(event_id, step)
         return new_id
+
+    def restage_venue(self, event_id: int) -> None:
+        """Rebuild the venue slate after the pool of venues changed (P4-1).
+
+        A coordinator-added venue must be rated and sorted by the same fit rules
+        as every other option, so the slate is regenerated rather than appended
+        to. An UNANSWERED venue step is restaged in place; an answered one is
+        left alone, because silently rewriting a recorded decision's options
+        would break the audit trail's promise that the slate is what was shown.
+        """
+        decision = self._live(event_id, "venue")
+        if decision is not None and decision.chosen_key:
+            return
+        if decision is not None:
+            # Withdraw rather than delete — same as the city-revision path. The
+            # log should still show the slate the coordinator was looking at
+            # before they added a venue of their own.
+            self.conn.execute("UPDATE decisions SET superseded_by=id WHERE id=?",
+                              (decision.id,))
+        self._stage_venue(event_id)
 
     def _invalidate_downstream(self, event_id: int, step: str) -> None:
         """Drop later answers: they were computed against a premise that changed."""

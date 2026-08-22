@@ -20,6 +20,10 @@
     </div>
   {% endif %}
 
+  <noscript></noscript>
+  <p class="muted">Images are composed when this page loads, which takes a few
+  seconds the first time.</p>
+
   <h2>City photograph</h2>
   <p class="muted">
     A photo of the city or the venue itself makes the strongest backdrop — venue
@@ -40,6 +44,10 @@
     <p class="muted">
       Every variant is generated for you — use the ones that fit and ignore the
       rest. All imagery is Saronic's own or yours; nothing is AI-generated.
+      {% if not has_upload %}
+      Two of the four layouts need a city photograph; upload one above and
+      they'll appear.
+      {% endif %}
     </p>
     <ul class="option-list">
       {% for result in results %}

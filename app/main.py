@@ -33,6 +33,13 @@ from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
 from app.features.visuals import VisualRequest, render_all, strip_exif
+from app.features.venue_scrape import (
+    AMENITIES,
+    AMENITY_LABELS,
+    build_venue_options as build_scraped_options,
+    extract_venue,
+    venue_from_facts,
+)
 from app.features.schedule import (
     describe_window,
     parse_window,
@@ -76,6 +83,9 @@ _NAV = (
        ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
+
+#: (key, label) pairs for the manual amenity form.
+AMENITY_DEFAULTS = [(k, AMENITY_LABELS[k]) for k in AMENITIES]
 
 #: Set by create_app so helpers/tests can reach the active database.
 CURRENT_DB = "events.db"
@@ -625,6 +635,88 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return render_deck_markdown(_deck(conn, event_id))
         finally:
             conn.close()
+
+    # ── add a venue by URL (P4-1) ────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/scrape", response_class=HTMLResponse)
+    def venue_scrape(request: Request, event_id: int, venue_url: str = Form("")):
+        """Read a venue's own page and PROPOSE it. Adds nothing on its own."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            url = (venue_url or "").strip()
+            options, problem, facts = [], "", {}
+            try:
+                result = fetch_url(url)
+            except UnsafeUrlError as exc:
+                problem = (f"Could not fetch that URL safely ({exc}). Add the "
+                           f"venue manually below.")
+            except FetchError as exc:
+                problem = (f"That page could not be read ({exc}). Add the venue "
+                           f"manually below.")
+            else:
+                facts = extract_venue(_scrape_client(conn), result.text,
+                                      source_url=result.final_url,
+                                      event_id=event_id)
+                options = build_scraped_options(facts, result.final_url)
+                if not facts.get("venue_name"):
+                    problem = ("Nothing usable could be read from that page. "
+                               "Add the venue manually below.")
+            return templates.TemplateResponse(request, "venue_add.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "options": options,
+                "source_url": url,
+                "problem": problem,
+                "amenity_defaults": AMENITY_DEFAULTS,
+            })
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/venues/add", response_class=HTMLResponse)
+    def venue_add_form(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return templates.TemplateResponse(request, "venue_add.html", {
+                "event": load_event(conn, event_id),
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "options": [], "source_url": "", "problem": "",
+                "amenity_defaults": AMENITY_DEFAULTS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/venues/add")
+    async def venue_add(request: Request, event_id: int):
+        """Confirm the proposals and add the venue to this event's slate."""
+        form = await request.form()
+        facts = {k: v for k, v in form.items() if v}
+        amenities = {k[len("amenity_"):]: v for k, v in form.items()
+                     if k.startswith("amenity_")}
+        facts["amenities"] = amenities
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                venue = venue_from_facts(facts, facts.get("source_url", ""))
+            except ValueError as exc:
+                return templates.TemplateResponse(request, "venue_add.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id, "options": [],
+                    "source_url": facts.get("source_url", ""),
+                    "problem": str(exc),
+                    "amenity_defaults": AMENITY_DEFAULTS,
+                }, status_code=400)
+            repo.add_custom_venue(conn, event_id, venue)
+            # Re-stage so the new venue is rated and sorted with the rest.
+            CoordinatorWorkflow(conn).restage_venue(event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
 
     # ── event schedule (P4-3) ────────────────────────────────────────────────
 
