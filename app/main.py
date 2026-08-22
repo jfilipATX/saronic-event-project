@@ -88,14 +88,15 @@ from app.features.url_fetch import fetch_url
 from app.features.url_guard import UnsafeUrlError, assert_fetchable
 from app.features.qr_checkin import (
     STATE_ALREADY,
-    STATE_VALID,
-    check_in_by_email,
-    issue_invitation,
-    register_walk_in,
     STATE_TAMPERED,
     STATE_VALID,
     check_in,
+    check_in_by_email,
+    find_invitee_truncated,
+    issue_invitation,
+    manual_check_in,
     mint_code,
+    register_walk_in,
     self_check_in,
 )
 from app.features.workflow import CHAIN, CoordinatorWorkflow
@@ -1478,7 +1479,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
     def _checkin_page(request: Request, conn, event_id: int, event,
                       scan_state: Optional[str] = None, scan_name: str = "",
-                      attendee=None, problem: str = ""):
+                      attendee=None, problem: str = "",
+                      manual_matches=None, manual_truncated: bool = False,
+                      manual_query: str = ""):
         # A VIP banner only on a NEW arrival: re-announcing on a repeat scan
         # would train the desk to ignore it.
         vip = bool(attendee and attendee.is_vip and scan_state == STATE_VALID)
@@ -1502,6 +1505,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "scan_vip": vip,
             "scan_company": getattr(attendee, "company", None) if vip else None,
             "checkin_assignees": sorted(assignees),
+            "manual_matches": manual_matches or [],
+            "manual_truncated": manual_truncated,
+            "manual_query": manual_query,
             "problem": problem,
         })
 
@@ -1575,6 +1581,49 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return _checkin_page(request, conn, event_id, event,
                                  scan_state=STATE_VALID,
                                  scan_name=attendee.full_name or "",
+                                 attendee=attendee)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/checkin/manual/lookup",
+              response_class=HTMLResponse)
+    def checkin_manual_lookup(request: Request, event_id: int,
+                              query: str = Form("")):
+        """Facilitator lookup of an EXISTING invitee (P5-8).
+
+        Returns a candidate list rendered on the desk. Never creates a record;
+        an empty result is a steel 'no match' note, not a walk-in.
+        """
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            matches, truncated = find_invitee_truncated(
+                conn, event_id, query, limit=10)
+            return _checkin_page(request, conn, event_id, event,
+                                 manual_matches=matches,
+                                 manual_truncated=truncated,
+                                 manual_query=query)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/checkin/manual",
+              response_class=HTMLResponse)
+    def checkin_manual_mark(request: Request, event_id: int,
+                           attendee_id: int = Form(0)):
+        """Mark an existing invitee arrived, recorded as method=manual (P5-8)."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                state, attendee = manual_check_in(
+                    conn, event_id, attendee_id, actor="facilitator")
+            except ValueError as exc:
+                return _checkin_page(request, conn, event_id, event,
+                                     problem=str(exc))
+            conn.commit()
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=state,
+                                 scan_name=attendee.full_name if attendee else "",
                                  attendee=attendee)
         finally:
             conn.close()

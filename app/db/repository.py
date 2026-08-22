@@ -90,10 +90,16 @@ def get_attendee_by_code(conn: sqlite3.Connection, checkin_code: str) -> Optiona
     return _row_to_attendee(row) if row else None
 
 
-def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str) -> None:
+def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str,
+                  method: str = "scan", actor: Optional[str] = None) -> None:
+    """Record an arrival. ``method`` is "scan" (QR) or "manual" (P5-8); ``actor``
+    names who recorded it (e.g. "facilitator"). The audit trail distinguishes a
+    person-recorded arrival from a code scan — same class of record as erasure.
+    Reuses the same attendee row; never creates a duplicate."""
     conn.execute(
-        "UPDATE attendees SET attended_at=? WHERE id=? AND attended_at IS NULL",
-        (when, attendee_id),
+        "UPDATE attendees SET attended_at=?, checkin_method=?, "
+        "checkin_actor=? WHERE id=? AND attended_at IS NULL",
+        (when, method, actor, attendee_id),
     )
 
 
@@ -212,6 +218,8 @@ _ADDED_COLUMNS = (
     ("attendees", "title", "TEXT"),
     ("attendees", "company", "TEXT"),
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
+    ("attendees", "checkin_method", "TEXT"),
+    ("attendees", "checkin_actor", "TEXT"),
     ("events", "starts_at", "TEXT"),
     ("events", "ends_at", "TEXT"),
     ("events", "owner_name", "TEXT"),

@@ -159,6 +159,68 @@ def check_in_by_email(conn: sqlite3.Connection, event_id: int, email: str,
     return STATE_VALID, attendee
 
 
+def find_invitee(conn: sqlite3.Connection, event_id: int, query: str,
+                 limit: int = 10) -> list[Attendee]:
+    """Case-insensitive substring lookup over name/email of EXISTING invitees.
+
+    Returns up to ``limit`` matches. Never creates a record — a no-match is an
+    empty list, which the desk renders as a steel "no match" note, not a
+    walk-in. (P5-8: manual check-in is a lookup, distinct from walk-in.)
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    like = f"%{q}%"
+    rows = conn.execute(
+        "SELECT * FROM attendees WHERE event_id=? AND erased_at IS NULL "
+        "AND (full_name LIKE ? OR email LIKE ?) "
+        "ORDER BY full_name LIMIT ?",
+        (event_id, like, like, limit + 1),
+    ).fetchall()
+    out = [Attendee(**dict(r)) for r in rows[:limit]]
+    return out
+
+
+def find_invitee_truncated(conn: sqlite3.Connection, event_id: int, query: str,
+                           limit: int = 10) -> tuple[list[Attendee], bool]:
+    """Like ``find_invitee`` but reports whether results were truncated."""
+    matches = find_invitee(conn, event_id, query, limit=limit)
+    truncated = len(matches) == limit and bool(
+        conn.execute(
+            "SELECT 1 FROM attendees WHERE event_id=? AND erased_at IS NULL "
+            "AND (full_name LIKE ? OR email LIKE ?) LIMIT ? OFFSET ?",
+            (event_id, f"%{query.strip()}%", f"%{query.strip()}%",
+             limit + 1, limit),
+        ).fetchone())
+    return matches, truncated
+
+
+def manual_check_in(conn: sqlite3.Connection, event_id: int, attendee_id: int,
+                    actor: str = "facilitator",
+                    when: str | None = None) -> tuple[str, Attendee | None]:
+    """Facilitator marks an EXISTING invitee arrived (P5-8).
+
+    Reuses the exact arrival path as a scan (``mark_attended``), but records
+    ``method="manual"`` and ``actor`` so the audit trail shows a person recorded
+    it. Refuses a non-existent id (never creates a walk-in) and re-announces an
+    already-arrived VIP exactly like a scan (STATE_ALREADY, no new banner).
+    """
+    attendee = repo.get_attendee(conn, attendee_id)
+    if attendee is None or attendee.event_id != event_id:
+        raise ValueError("No such invitee for this event.")
+    if attendee.is_withdrawn:
+        return STATE_WITHDRAWN, attendee
+    if attendee.attended_at is not None:
+        return STATE_ALREADY, attendee
+    when = when or _now()
+    repo.mark_attended(conn, attendee.id, when, method="manual", actor=actor)
+    attendee.attended_at = when
+    attendee.checkin_method = "manual"
+    attendee.checkin_actor = actor
+    _raise_vip_alert(conn, attendee, when)
+    return STATE_VALID, attendee
+
+
 def register_walk_in(conn: sqlite3.Connection, event_id: int, full_name: str,
                      email: str, title: str, company: str,
                      is_vip: bool = False,

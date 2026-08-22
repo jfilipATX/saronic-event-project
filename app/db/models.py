@@ -65,6 +65,13 @@ class Attendee:
     #: PII erasure. Irreversible; name/email/code are destroyed in place while
     #: attendance survives as an anonymous tally.
     erased_at: Optional[str] = None
+    #: P5-8 — how this arrival was recorded. "scan" (QR) or "manual" (facilitator
+    #: lookup of an existing invitee). Distinguishes a person-recorded arrival
+    #: from a code scan in the audit trail — same class of record as erasure.
+    checkin_method: Optional[str] = None
+    #: P5-8 — who recorded a manual arrival. There is no login yet (P5-9 light),
+    #: so this is "facilitator"; the field is ready for a named actor later.
+    checkin_actor: Optional[str] = None
 
     @property
     def is_withdrawn(self) -> bool:

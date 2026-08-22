@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS attendees (
     erased_at       TEXT,
     title           TEXT,
     company         TEXT,
-    is_vip          INTEGER NOT NULL DEFAULT 0
+    is_vip          INTEGER NOT NULL DEFAULT 0,
+    checkin_method  TEXT,
+    checkin_actor   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS event_variables (

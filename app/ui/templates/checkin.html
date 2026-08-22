@@ -1,6 +1,8 @@
 <!-- checkin.html — day-of check-in desk.
      Context: event, steps, event_id, attendees, scan_state, scan_name,
-     checkin_assignees (sorted display names of per-event check-in staff). -->
+     checkin_assignees (sorted display names of per-event check-in staff),
+     manual_matches (list of Attendee from a facilitator lookup),
+     manual_truncated (bool), manual_query (str). -->
 {% extends "base.html" %}
 {% block title %}Check-in — {{ event.name }}{% endblock %}
 {% block content %}
@@ -81,6 +83,51 @@
            required>
     <button class="btn-primary" type="submit">Look up and check in</button>
   </form>
+
+  {# P5-8 — manual facilitator check-in of an EXISTING invitee. Quieter than the
+     primary scan flow: a card-surface tool, not a second front door. #}
+  <div class="card-surface">
+    <h2>Manual check-in (facilitator)</h2>
+    <p class="muted">Look up an existing invitee by name or email and mark them
+    arrived — no code, no walk-in form. The action is logged as manual.</p>
+    <form method="post" action="/events/{{ event_id }}/checkin/manual/lookup" class="form-row">
+      <input class="input" type="text" name="query"
+             placeholder="Name or email" value="{{ manual_query }}">
+      <button class="btn-quiet" type="submit">Find</button>
+    </form>
+
+    {% if manual_query %}
+      {% if manual_matches %}
+        <ul class="option-list">
+          {% for m in manual_matches %}
+            <li class="option-card">
+              <form method="post" action="/events/{{ event_id }}/checkin/manual" class="form-row">
+                <input type="hidden" name="attendee_id" value="{{ m.id }}">
+                <span class="option-label">{{ m.full_name or "(unnamed)" }}{% if m.is_vip %}
+                  <span class="fit-badge fit-vip">VIP</span>{% endif %}</span>
+                <div class="option-meta">
+                  {% if m.email %}<span>{{ m.email }}</span>{% endif %}
+                  {% if m.company %}<span>{{ m.company }}</span>{% endif %}
+                  {% if m.attended_at %}<span>Arrived {{ m.attended_at }}</span>
+                  {% else %}<span>Not yet arrived</span>{% endif %}
+                </div>
+                <button class="btn-quiet" type="submit"
+                        {% if m.attended_at %}disabled{% endif %}>
+                  {% if m.attended_at %}Arrived{% else %}Mark arrived{% endif %}</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if manual_truncated %}
+          <p class="muted">Showing the first 10 matches — refine your search.</p>
+        {% endif %}
+      {% else %}
+        <div class="pending-note">
+          No matching invitee — if this is a walk-in, use the form below.
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
 
   <h2>Walk-in</h2>
   <p class="muted">No credential — recorded as self-reported, kept distinct from
