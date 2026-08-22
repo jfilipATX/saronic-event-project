@@ -21,11 +21,16 @@ from typing import Optional, Protocol
 
 from app.providers.base import ImageAsset
 
-#: Root of the unpacked press kit. Overridable for tests/deployment.
-PRESS_KIT_ROOT = os.environ.get(
-    "SARONIC_PRESS_KIT",
-    "/home/hermes/saronic-press-kit/Saronic Press Kit-July26",
+#: Root of the press-kit assets.
+#:
+#: Defaults to the copy bundled in the repo (``assets/press-kit``) so a fresh
+#: clone renders correctly on any machine with no configuration. Override with
+#: SARONIC_PRESS_KIT to point at a full press-kit checkout elsewhere.
+_BUNDLED_ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "assets", "press-kit",
 )
+PRESS_KIT_ROOT = os.environ.get("SARONIC_PRESS_KIT", _BUNDLED_ROOT)
 
 #: role -> path relative to the press-kit root. Mirrors the DESIGN.md table.
 _BRAND_ASSETS: dict[str, str] = {
