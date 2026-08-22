@@ -17,7 +17,12 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -38,6 +43,7 @@ from app.features.qr_checkin import (
     STATE_ALREADY,
     STATE_VALID,
     check_in_by_email,
+    issue_invitation,
     register_walk_in,
     STATE_TAMPERED,
     STATE_VALID,
@@ -578,6 +584,76 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return render_deck_markdown(_deck(conn, event_id))
         finally:
             conn.close()
+
+    # ── invite issuance (P2-5 / phase-1 gap) ─────────────────────────────────
+
+    def _invites_page(request: Request, conn, event_id: int, event,
+                      issued=None, problem: str = "", form=None):
+        """Render the invite desk. ``form`` carries back what was typed, so a
+        validation failure never makes the coordinator retype everything."""
+        return templates.TemplateResponse(request, "invites.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, None),
+            "event_id": event_id,
+            "attendees": repo.list_attendees(conn, event_id),
+            "issued": issued,
+            "problem": problem,
+            "form": form or {},
+        })
+
+    @app.get("/events/{event_id}/invites", response_class=HTMLResponse)
+    def invites_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _invites_page(request, conn, event_id,
+                                 load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/invites", response_class=HTMLResponse)
+    def invites_issue(request: Request, event_id: int,
+                      full_name: str = Form(""), email: str = Form(""),
+                      title: str = Form(""), company: str = Form(""),
+                      is_vip: str = Form("")):
+        typed = {"full_name": full_name, "email": email, "title": title,
+                 "company": company, "is_vip": is_vip}
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                person = issue_invitation(
+                    conn, _signing_secret(), event_id, full_name=full_name,
+                    email=email, title=title, company=company,
+                    is_vip=is_vip.strip() not in ("", "0", "false"))
+            except ValueError as exc:
+                return _invites_page(request, conn, event_id, event,
+                                     problem=str(exc), form=typed)
+            conn.commit()
+            return _invites_page(request, conn, event_id, event, issued=person)
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/invites/{attendee_id}/qr.png")
+    def invite_qr(event_id: int, attendee_id: int):
+        """The credential as a scannable image, so it can be emailed or printed."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            person = repo.get_attendee(conn, attendee_id)
+            if person is None or person.event_id != event_id:
+                raise HTTPException(status_code=404, detail="No such invitee.")
+            if not person.checkin_code:
+                raise HTTPException(status_code=404,
+                                    detail="No credential has been issued yet.")
+        finally:
+            conn.close()
+        import io
+
+        import qrcode
+
+        buf = io.BytesIO()
+        qrcode.make(person.checkin_code).save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
 
     # ── check-in (day-of operation) ──────────────────────────────────────────
 

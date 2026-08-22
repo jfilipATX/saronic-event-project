@@ -123,6 +123,9 @@
     <p class="muted">Nobody on the roster yet.</p>
   {% endif %}
 
-  <p class="mt-xl"><a class="link-accent"
-    href="/events/{{ event_id }}/checkin">Go to the check-in desk</a></p>
+  <p class="mt-xl">
+    <a class="link-accent" href="/events/{{ event_id }}/invites">Issue invitations</a>
+    ·
+    <a class="link-accent" href="/events/{{ event_id }}/checkin">Go to the check-in desk</a>
+  </p>
 {% endblock %}

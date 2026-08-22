@@ -205,3 +205,49 @@ def register_walk_in(conn: sqlite3.Connection, event_id: int, full_name: str,
     attendee.attended_at = when
     _raise_vip_alert(conn, attendee, when)
     return attendee
+
+
+def issue_invitation(conn: sqlite3.Connection, secret: str, event_id: int,
+                     full_name: str, email: str, title: str = "",
+                     company: str = "", is_vip: bool = False) -> Attendee:
+    """Mint a signed credential for an invitee, from the browser.
+
+    Idempotent on email: issuing to someone already on the roster mints THEIR
+    code rather than creating a second person. Importing a roster and then
+    issuing invites is the normal order of work, not an edge case, and a
+    duplicate would mean two credentials for one guest.
+
+    Re-issuing to a withdrawn person reinstates them: the coordinator asking for
+    an invitation is a clearer signal of intent than the earlier cancellation.
+    """
+    missing = [label for label, value in
+               (("a name", full_name), ("an email address", email))
+               if not value or not value.strip()]
+    if missing:
+        raise ValueError("An invitation needs " + " and ".join(missing) + ".")
+    email = email.strip()
+    if not _EMAIL_RE.match(email):
+        raise ValueError(f"{email!r} is not a valid email address.")
+
+    existing = repo.get_attendee_by_email(conn, event_id, email)
+    if existing is not None:
+        if existing.is_withdrawn:
+            repo.reinstate_attendee(conn, existing.id)
+        code = existing.checkin_code or mint_code(secret, existing.id)
+        conn.execute("UPDATE attendees SET checkin_code=?, full_name=?, "
+                     "title=COALESCE(NULLIF(?,''), title), "
+                     "company=COALESCE(NULLIF(?,''), company), "
+                     "is_vip=? WHERE id=?",
+                     (code, full_name.strip(), title.strip(), company.strip(),
+                      int(bool(is_vip)), existing.id))
+        return repo.get_attendee(conn, existing.id)
+
+    attendee = Attendee(
+        event_id=event_id, full_name=full_name.strip(), email=email,
+        title=title.strip() or None, company=company.strip() or None,
+        is_vip=is_vip, self_reported=False,
+    )
+    aid = repo.add_attendee(conn, attendee)
+    code = mint_code(secret, invite_id=aid)
+    conn.execute("UPDATE attendees SET checkin_code=? WHERE id=?", (code, aid))
+    return repo.get_attendee(conn, aid)

@@ -1,0 +1,98 @@
+<!-- invites.html — mint QR credentials for invitees.
+     Context: event, event_id, attendees, issued, problem, form. -->
+{% extends "base.html" %}
+{% block title %}Invitations — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Before the event</p>
+  <h1>Invitations</h1>
+
+  {% if issued %}
+    <div class="scan-banner scan-valid">
+      Invitation issued: <strong>{{ issued.full_name }}</strong>
+    </div>
+    <div class="card-surface mt-xl">
+      <p class="muted">Send this code to {{ issued.email }}. It is signed, so it
+      cannot be forged, and it only admits once.</p>
+      <p><code>{{ issued.checkin_code }}</code></p>
+      <p class="muted">
+        <a class="link-accent" href="/events/{{ event_id }}/invites/{{ issued.id }}/qr.png"
+           target="_blank" rel="noopener">Open the QR code</a>
+      </p>
+    </div>
+  {% endif %}
+
+  {% if problem %}
+    <div class="pending-note">
+      <p><strong>Not issued.</strong> {{ problem }}</p>
+      <p class="muted">Nothing was created — what you typed is kept below.</p>
+    </div>
+  {% endif %}
+
+  <h2>Issue an invitation</h2>
+  <p class="muted">
+    Issuing to someone already on the roster mints their code rather than adding
+    them twice.
+  </p>
+  <form method="post" action="/events/{{ event_id }}/invites">
+    <div class="form-row">
+      <input class="input" type="text" name="full_name" placeholder="Full name"
+             value="{{ form.full_name or '' }}" required>
+      <input class="input" type="email" name="email" placeholder="Email"
+             value="{{ form.email or '' }}" required>
+    </div>
+    <div class="form-row">
+      <input class="input" type="text" name="title" placeholder="Job title (optional)"
+             value="{{ form.title or '' }}">
+      <input class="input" type="text" name="company" placeholder="Company (optional)"
+             value="{{ form.company or '' }}">
+    </div>
+    <div class="form-row">
+      <label class="muted"><input type="checkbox" name="is_vip" value="1"
+        {% if form.is_vip %}checked{% endif %}> VIP</label>
+      <button class="btn-primary" type="submit">Issue invitation</button>
+    </div>
+  </form>
+
+  <h2>Invited ({{ attendees | length }})</h2>
+  {% if attendees %}
+    <div class="card-surface">
+      <table class="table">
+        <thead>
+          <tr>
+            <th><span class="table-header">Name</span></th>
+            <th><span class="table-header">Email</span></th>
+            <th><span class="table-header">Credential</span></th>
+            <th><span class="table-header">Status</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in attendees %}
+            <tr>
+              <td>{{ person.full_name }}{% if person.is_vip %}
+                <span class="fit-badge fit-vip">VIP</span>{% endif %}</td>
+              <td>{{ person.email or '—' }}</td>
+              <td>
+                {% if person.checkin_code %}
+                  <a class="link-accent"
+                     href="/events/{{ event_id }}/invites/{{ person.id }}/qr.png"
+                     target="_blank" rel="noopener">QR</a>
+                {% else %}
+                  <span class="muted">Not issued</span>
+                {% endif %}
+              </td>
+              <td>{% if person.attended_at %}Arrived{% else %}Not yet arrived{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No invitations issued yet.</p>
+  {% endif %}
+
+  <p class="mt-xl">
+    <a class="link-accent" href="/events/{{ event_id }}/roster">Import a roster</a>
+    ·
+    <a class="link-accent" href="/events/{{ event_id }}/checkin">Check-in desk</a>
+  </p>
+{% endblock %}
