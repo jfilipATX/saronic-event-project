@@ -46,3 +46,10 @@ class SpendLedger:
         except sqlite3.Error:
             pass
         return row_id
+
+    def total_for_event(self, event_id: int) -> float:
+        """USD logged against this event so far (for per-event caps)."""
+        row = self._conn.execute(
+            "SELECT COALESCE(SUM(usd), 0.0) FROM spend_log "
+            "WHERE event_id = ?", (event_id,)).fetchone()
+        return float(row[0]) if row else 0.0

@@ -448,3 +448,27 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 }
 .library-tile { padding: var(--space-md, 0.75rem); }
 .library-thumb { display: block; width: 100%; height: auto; border-radius: 4px; }
+
+/* P5-4 manual venue search: cost estimate + proposal cards. Neutral, not an
+   alert — these are informational so the coordinator triggers an informed call. */
+.cost-estimate {
+  border: 1px solid var(--color-steel, #9DA7AF);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin: 0.5rem 0 1rem;
+  background: var(--color-paper, #fff);
+}
+.cost-estimate ul { margin: 0.3rem 0 0; padding-left: 1.1rem; }
+.cost-estimate li { margin-bottom: 0.2rem; }
+
+.proposal-card {
+  border: 1px solid var(--color-ink, #1b1f24);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.6rem;
+}
+.proposal-card h3 { margin: 0 0 0.3rem; }
+.proposal-card .option-reasoning { margin: 0 0 0.6rem; }
+
+fieldset.form-row { border: none; padding: 0; margin: 0.5rem 0; }
+.checkbox { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.9rem; }

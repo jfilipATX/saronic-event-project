@@ -54,6 +54,10 @@ class Config:
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-4-20250514"
     anthropic_spend_limit: float = 250.0
+    # P5-4: hard ceiling on Claude spend *for the venue-search surface alone*,
+    # per event. Manual trigger must not be unbounded — once this event has
+    # burned its venue-search budget, the button is refused pre-call.
+    venue_search_cap_usd: float = 2.0
 
     # ── Provider mode ──
     provider_mode: str = "mock"          # "mock" | "real"
@@ -85,6 +89,7 @@ def load_config() -> Config:
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         anthropic_model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-20250514"),
         anthropic_spend_limit=_env_float("ANTHROPIC_SPEND_LIMIT", 250.0),
+        venue_search_cap_usd=_env_float("VENUE_SEARCH_CAP_USD", 2.0),
         provider_mode=os.environ.get("PROVIDER_MODE", "mock").strip().lower(),
         use_real_claude=_env_bool("USE_REAL_CLAUDE", False),
         pexels_api_key=os.environ.get("PEXELS_API_KEY", ""),

@@ -46,6 +46,14 @@ from app.features.venue_scrape import (
     extract_venue,
     venue_from_facts,
 )
+from app.features.venue_search import (
+    build_search_prompt,
+    estimate_search_cost,
+    search_venues,
+)
+from app.claude.errors import BudgetExceededError, ClaudeError
+from app.claude.ledger import SpendLedger
+from app.config import CONFIG
 from app.features.image_library import (
     classify_backdrop,
     fetch_feed,
@@ -130,7 +138,6 @@ def _scrape_client(conn=None):
     cfg = load_config()
     if not cfg.claude_enabled:
         return None
-    from app.claude.ledger import SpendLedger
 
     return get_client(cfg, ledger=SpendLedger(conn) if conn is not None else None)
 
@@ -644,8 +651,6 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # mock scaffolding onto a title slide.
         claude = None
         if CONFIG.claude_enabled:
-            from app.claude.ledger import SpendLedger
-
             claude = get_client(CONFIG, ledger=SpendLedger(conn))
         return build_deck(compose_playbook(conn, event_id), ImageResolver(stock),
                           claude_client=claude, event_id=event_id)
@@ -741,6 +746,116 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "event_id": event_id,
                 "options": [], "source_url": "", "problem": "",
                 "amenity_defaults": AMENITY_DEFAULTS,
+            })
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/venues/search", response_class=HTMLResponse)
+    def venue_search_form(request: Request, event_id: int):
+        """Manual-trigger entry point. Shows the cost estimate BEFORE the
+        coordinator pulls the trigger — you cannot spend what you cannot see."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            # A conservative pre-call estimate from the event's own facts, so the
+            # number is real (not a constant) and visible before any call.
+            capacity = event.audience_estimate or 0
+            amenity_keys = [k for k, _ in AMENITY_DEFAULTS]
+            prompt = build_search_prompt(
+                event.city or "", event.state or "", capacity, amenity_keys)
+            in_t, out_t, usd = estimate_search_cost(len(prompt))
+            cap = CONFIG.venue_search_cap_usd
+            spent = repo.spend_total(conn, event_id=event_id)
+            return templates.TemplateResponse(request, "venue_search.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "est_input_tokens": in_t,
+                "est_output_tokens": out_t,
+                "est_usd": usd,
+                "cap_usd": cap,
+                "spent_usd": spent,
+                "over_cap": spent >= cap,
+                "problem": "",
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/venues/search", response_class=HTMLResponse)
+    def venue_search_run(request: Request, event_id: int,
+                         city: str = Form(""), state: str = Form(""),
+                         capacity: int = Form(0),
+                         amenities: list = Form([])):
+        """Trigger the LLM venue search. Capped (per-event) and logged.
+
+        Returns proposed venues as staged options — the coordinator confirms
+        before anything lands on the slate.
+        """
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            city = (city or event.city or "").strip()
+            state = (state or event.state or "").strip()
+            capacity = int(capacity or event.audience_estimate or 0)
+            if not city or not capacity:
+                return templates.TemplateResponse(request, "venue_search.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id,
+                    "problem": "Need a city and a target capacity to search.",
+                    "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
+                    "spent_usd": repo.spend_total(conn, event_id=event_id),
+                    "over_cap": False,
+                })
+            ledger = SpendLedger(conn)
+            client = _scrape_client(conn)  # None in mock mode -> offline path
+            try:
+                options = search_venues(
+                    client, event_id=event_id, city=city, state=state,
+                    capacity=capacity, amenities=list(amenities),
+                    ledger=ledger,
+                    per_event_cap_usd=CONFIG.venue_search_cap_usd)
+            except BudgetExceededError:
+                return templates.TemplateResponse(request, "venue_search.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id,
+                    "problem": (f"Venue search is capped at "
+                                f"${CONFIG.venue_search_cap_usd:.2f} per event "
+                                f"to control cost. This event has reached its "
+                                f"limit — no call was made."),
+                    "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
+                    "spent_usd": repo.spend_total(conn, event_id=event_id),
+                    "over_cap": True,
+                })
+            except ClaudeError as exc:
+                # Provider fail-soft: a bad key / rate limit / outage must not
+                # 500 the desk. Surface it as a problem; the coordinator can
+                # retry or add venues manually.
+                return templates.TemplateResponse(request, "venue_search.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id,
+                    "problem": (f"The venue search could not run "
+                                f"({type(exc).__name__}). Nothing was charged "
+                                f"for a failed call — add venues manually "
+                                f"below, or retry."),
+                    "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
+                    "spent_usd": repo.spend_total(conn, event_id=event_id),
+                    "over_cap": False,
+                })
+            # Stage the proposals: render them as confirmable cards (proposed,
+            # never auto-applied) on the search results surface. Each card posts
+            # its facts to /venues/add when the coordinator accepts it.
+            return templates.TemplateResponse(request, "venue_search.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "options": options,
+                "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
+                "spent_usd": repo.spend_total(conn, event_id=event_id),
+                "over_cap": False,
+                "searched": True,
             })
         finally:
             conn.close()
