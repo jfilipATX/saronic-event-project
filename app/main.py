@@ -970,10 +970,12 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # Which library image is currently the backdrop, so provenance reaches
         # the sidecar rather than defaulting to "uploaded".
         origin, attribution = "uploaded", ""
+        chosen_image_id = None
         for var in repo.list_variables(conn, event_id):
             if var.kind == "backdrop_image_id" and var.value.isdigit():
                 chosen = repo.get_library_image(conn, int(var.value))
                 if chosen is not None:
+                    chosen_image_id = chosen.id
                     origin = chosen.origin
                     attribution = chosen.article_title or chosen.source_url
                 break
@@ -997,6 +999,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "results": results,
             "has_upload": os.path.exists(upload),
             "library": repo.library_images(conn, event_id),
+            "chosen_image_id": chosen_image_id,
             "open_questions": playbook.open_questions,
             "problem": problem,
         })

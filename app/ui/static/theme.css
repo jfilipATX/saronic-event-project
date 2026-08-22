@@ -120,6 +120,7 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   border: 1px solid transparent;
 }
 .option-card.is-chosen { border-color: var(--color-tertiary); }
+.library-tile.is-chosen { border: 1px solid var(--color-tertiary); }
 .option-card .option-label { font-family: var(--font-display); font-stretch: 125%; font-weight: 600; font-size: 1.125rem; }
 .option-card .option-meta { color: var(--color-steel); font-size: 0.875rem; display: flex; gap: var(--space-md); flex-wrap: wrap; }
 .option-card .option-reasoning { grid-column: 1 / -1; color: var(--color-steel); font-size: 0.9375rem; margin: 0; }

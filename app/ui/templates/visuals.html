@@ -40,10 +40,13 @@
   {% if library %}
     <ul class="library-strip">
       {% for image in library %}
-        <li class="library-tile card-surface">
+        <li class="library-tile card-surface {% if image.id == chosen_image_id %}is-chosen{% endif %}">
           <img class="library-thumb"
                src="/events/{{ event_id }}/visuals/library/{{ image.id }}.png"
                alt="{{ image.article_title or 'Library image' }}">
+          {% if image.id == chosen_image_id %}
+            <p class="fit-badge fit-fits">In use as backdrop</p>
+          {% endif %}
           <p class="option-reasoning">
             {% if image.origin == 'blog' %}
               From the blog:
@@ -57,7 +60,9 @@
           <div class="option-actions">
             <form method="post"
                   action="/events/{{ event_id }}/visuals/library/{{ image.id }}/use">
-              <button class="btn-quiet" type="submit">Use as backdrop</button>
+              <button class="btn-quiet {% if image.id == chosen_image_id %}is-active{% endif %}" type="submit">
+                {% if image.id == chosen_image_id %}Backdrop ✓{% else %}Use as backdrop{% endif %}
+              </button>
             </form>
             <form method="post"
                   action="/events/{{ event_id }}/visuals/library/{{ image.id }}/delete">
