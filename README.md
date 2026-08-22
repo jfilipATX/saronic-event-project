@@ -36,7 +36,7 @@ The coordinator walks a decision chain — **event type → audience estimate �
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && chmod 600 .env
-.venv/bin/python -m pytest tests/ -q        # 782 tests, all offline
+.venv/bin/python -m pytest tests/ -q        # 786 tests, all offline
 .venv/bin/uvicorn app.main:create_app --factory
 ```
 
@@ -128,7 +128,7 @@ Every route translates to `CoordinatorWorkflow`, so the UI cannot drift from sta
 
 ## Verification
 
-- **782 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
+- **786 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
 - **Secret hygiene:** `scripts/audit_secrets.py` scans all tracked files *and full commit history* for key values (not names), wired as a pre-push hook. Verified in both directions — clean on the real repo, and a negative control with a staged key gets caught and blocked.
 - Evidence artifacts are tracked deliberately: [`generated/`](generated/) holds exported playbooks and the complete Claude pass transcripts.
 
