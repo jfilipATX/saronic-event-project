@@ -184,7 +184,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
-            elif key in ("slides", "checkin", "invites"):
+            elif key in ("slides", "visuals", "checkin", "invites"):
                 state = "active" if current == key else "todo"
                 url = f"/events/{event_id}/{key}"
             else:
