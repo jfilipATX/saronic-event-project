@@ -10,9 +10,11 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Iterator, List, Optional
+from typing import Dict, Iterator, List, Optional
 
-from app.db.models import Attendee, Decision, DecisionOption, Event, EventVariable
+from app.db.models import (
+    Attendee, Decision, DecisionOption, Event, EventVariable, VenueUse,
+)
 from app.db import schema_sql_text as _sql
 
 
@@ -310,3 +312,48 @@ def decision_history(conn: sqlite3.Connection, event_id: int) -> List[Decision]:
         (event_id,),
     ).fetchall()
     return [_row_to_decision(r) for r in rows]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2-3 — venue favourites and used-before history
+#
+# Both key on a stable ``venue_ref``, never the display name: a rebranded venue
+# must keep its history, and two venues sharing a name in different cities must
+# never merge.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def set_favourite(conn: sqlite3.Connection, venue_ref: str, on: bool = True) -> None:
+    if on:
+        conn.execute(
+            "INSERT OR IGNORE INTO venue_favourites (venue_ref) VALUES (?)",
+            (venue_ref,),
+        )
+    else:
+        conn.execute("DELETE FROM venue_favourites WHERE venue_ref=?", (venue_ref,))
+
+
+def favourites(conn: sqlite3.Connection) -> set:
+    return {r["venue_ref"] for r in conn.execute(
+        "SELECT venue_ref FROM venue_favourites")}
+
+
+def record_venue_use(conn: sqlite3.Connection, use: VenueUse) -> int:
+    cur = conn.execute(
+        "INSERT INTO venue_uses (venue_ref, event_id, event_name, used_on, notes) "
+        "VALUES (?,?,?,?,?)",
+        (use.venue_ref, use.event_id, use.event_name, use.used_on, use.notes),
+    )
+    return int(cur.lastrowid)
+
+
+def venue_uses(conn: sqlite3.Connection) -> Dict[str, List[VenueUse]]:
+    """All recorded uses grouped by venue_ref, most recent first within each."""
+    rows = conn.execute(
+        "SELECT id, venue_ref, event_id, event_name, used_on, notes FROM venue_uses "
+        "ORDER BY COALESCE(used_on, '') DESC, id DESC"
+    ).fetchall()
+    grouped: Dict[str, List[VenueUse]] = {}
+    for r in rows:
+        grouped.setdefault(r["venue_ref"], []).append(VenueUse(**dict(r)))
+    return grouped

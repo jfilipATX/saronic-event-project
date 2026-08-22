@@ -41,6 +41,23 @@ class EventVariable:
     notes: Optional[str] = None
 
 
+@dataclass
+class VenueUse:
+    """A record that a venue hosted one of our events (P2-3).
+
+    Keyed on ``venue_ref`` (a stable id) rather than the display name, so a
+    renamed venue keeps its history and two venues sharing a name in different
+    cities never merge.
+    """
+
+    id: Optional[int] = None
+    venue_ref: str = ""
+    event_id: Optional[int] = None
+    event_name: str = ""
+    used_on: Optional[str] = None
+    notes: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # T11.5 — decision persistence
 #

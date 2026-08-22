@@ -24,7 +24,29 @@
     {% if option.data.capacity %}<span>Capacity {{ "{:,}".format(option.data.capacity) }}</span>{% endif %}
     {% if option.data.rating %}<span>Rated {{ option.data.rating }}</span>{% endif %}
     {% if option.data.city %}<span>{{ option.data.city }}</span>{% endif %}
+    {% if option.data.used_before %}<span>Used before ({{ option.data.used_before }})</span>{% endif %}
+    {# Reference links, not actions: quiet accent links, never buttons. #}
+    {% if option.data.website %}
+      <a class="link-accent" href="{{ option.data.website }}"
+         target="_blank" rel="noopener noreferrer">Website</a>
+    {% endif %}
+    {% if option.data.map_url %}
+      <a class="link-accent" href="{{ option.data.map_url }}"
+         target="_blank" rel="noopener noreferrer">Map</a>
+    {% endif %}
   </div>
+  {% endif %}
+
+  {% if option.data.venue_ref %}
+    {# Favourite is a marker the coordinator sets, never a ranking input. #}
+    <form method="post" action="/events/{{ event_id }}/venues/{{ option.data.venue_ref }}/favourite"
+          class="favourite-form">
+      <input type="hidden" name="on" value="{{ 0 if option.data.favourite else 1 }}">
+      <button class="btn-quiet" type="submit"
+              title="{{ 'Remove from favourites' if option.data.favourite else 'Mark as a favourite' }}">
+        {% if option.data.favourite %}★ Favourite{% else %}☆ Favourite{% endif %}
+      </button>
+    </form>
   {% endif %}
 
   <!-- options-plus-reasoning contract: the "why" is always visible, never a tooltip -->

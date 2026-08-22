@@ -207,6 +207,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                         else f"/events/{event_id}/steps/{target}")
                 return RedirectResponse(dest, status_code=303)
             index = CHAIN.index(step_key) + 1 if step_key in CHAIN else 1
+            # Favourites are live state, not part of the recorded decision. The
+            # stored options are a snapshot from when the step was staged, so a
+            # star toggled afterwards would otherwise never appear. Overlay the
+            # current set at render time — display only; the decision log is
+            # untouched.
+            if step_key == "venue":
+                favs = repo.favourites(conn)
+                for opt in decision.options:
+                    ref = opt.data.get("venue_ref")
+                    if ref:
+                        opt.data["favourite"] = ref in favs
             return templates.TemplateResponse(request, "step.html", {
                 "event": event,
                 "steps": nav_steps(conn, event_id, step_key),
@@ -277,6 +288,25 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return render_markdown(compose_playbook(conn, event_id))
         finally:
             conn.close()
+
+    # ── venue favourites (P2-3) ──────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/{venue_ref}/favourite")
+    def toggle_favourite(event_id: int, venue_ref: str, on: str = Form("1")):
+        """Mark or unmark a venue as a favourite.
+
+        Deliberately does NOT re-stage the venue decision: a favourite is a
+        marker, not an answer, and toggling it must not disturb a choice the
+        coordinator already made.
+        """
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.set_favourite(conn, venue_ref, on.strip() not in ("0", "", "false"))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
 
     # ── city revision (recovery path when a city has no venue data) ──────────
 

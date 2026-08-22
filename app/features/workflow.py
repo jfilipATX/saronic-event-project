@@ -88,7 +88,11 @@ class CoordinatorWorkflow:
         audience = event.audience_estimate or 0
         city = event.city or ""
         venues = self._venues.search(city, audience)
-        options = build_venue_options(venues, audience)
+        options = build_venue_options(
+            venues, audience,
+            favourites=repo.favourites(self.conn),
+            history=repo.venue_uses(self.conn),
+        )
         blocked = None
         if not options:
             # The provider has nothing for this city. That is real information the

@@ -170,7 +170,11 @@ class TestUiRendersTheBlockedStep:
                     data={"step": "audience", "key": "baseline"})
         page = client.get(f"/events/{eid}/steps/venue")
         assert "fit-fits" in page.text
-        assert "btn-quiet" not in page.text
+        # The blocked-state recovery panel must not appear on a healthy page.
+        # (btn-quiet itself is now also used by the favourite toggle, so assert
+        # on the panel rather than the class.)
+        assert "pending-note" not in page.text
+        assert "No options available" not in page.text
 
 
 class TestBlockerReachesEverySurface:

@@ -49,4 +49,23 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_event ON decisions(event_id, id);
+
+-- P2-3: venue favourites and used-before history, keyed on a stable venue_ref
+-- rather than the display name so a rename does not orphan the record.
+CREATE TABLE IF NOT EXISTS venue_favourites (
+    venue_ref  TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_uses (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    venue_ref  TEXT NOT NULL,
+    event_id   INTEGER,
+    event_name TEXT NOT NULL,
+    used_on    TEXT,
+    notes      TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_venue_uses_ref ON venue_uses(venue_ref, used_on);
 """

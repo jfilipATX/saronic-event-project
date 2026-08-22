@@ -13,7 +13,8 @@ budget halves; our job is to make the trade-off legible, not to make it.
 """
 from __future__ import annotations
 
-from typing import List, Sequence
+import urllib.parse
+from typing import Dict, List, Optional, Sequence, Set
 
 from app.db.models import DecisionOption
 from app.providers.base import Venue
@@ -53,6 +54,50 @@ def _slug(name: str) -> str:
     return "-".join(name.lower().split())
 
 
+def venue_id(venue: Venue) -> str:
+    """Stable identity for favourites and history.
+
+    Uses ``venue.venue_ref`` when the provider pins one — that is what lets a
+    RENAMED venue keep its history. Otherwise falls back to a slug of the name,
+    disambiguated by city so two "Grand Hall"s in different cities never merge.
+    """
+    if venue.venue_ref:
+        return venue.venue_ref
+    base = _slug(venue.name)
+    city = _slug(venue.city or "")
+    # A name already ending in its city (e.g. "Fairmont Austin") needs no suffix.
+    if city and not base.endswith(city):
+        return f"{base}--{city}"
+    return base
+
+
+def _map_url(venue: Venue) -> str:
+    """A link to the venue on OpenStreetMap. No API key, no account, no quota."""
+    if venue.latitude is not None and venue.longitude is not None:
+        return (
+            f"https://www.openstreetmap.org/?mlat={venue.latitude}"
+            f"&mlon={venue.longitude}#map=17/{venue.latitude}/{venue.longitude}"
+        )
+    query = urllib.parse.quote_plus(f"{venue.name} {venue.city}".strip())
+    return f"https://www.openstreetmap.org/search?query={query}"
+
+
+def _history_sentence(uses: List) -> str:
+    """Human phrasing for used-before history, most recent first."""
+    if not uses:
+        return ""
+    first = uses[0]
+    year = (first.used_on or "")[:4]
+    when = f" in {year}" if year else ""
+    if len(uses) == 1:
+        return f" Previously hosted {first.event_name}{when}."
+    others = len(uses) - 1
+    return (
+        f" Previously hosted {first.event_name}{when}"
+        f" and {others} other event{'s' if others > 1 else ''}."
+    )
+
+
 def _reasoning(venue: Venue, audience: int, fit: str) -> str:
     head = f"Capacity {venue.capacity:,}"
     if audience > 0:
@@ -84,28 +129,48 @@ def _reasoning(venue: Venue, audience: int, fit: str) -> str:
 
 
 def build_venue_options(
-    venues: Sequence[Venue], audience: int
+    venues: Sequence[Venue],
+    audience: int,
+    favourites: Optional[Set[str]] = None,
+    history: Optional[Dict[str, List]] = None,
 ) -> List[DecisionOption]:
     """Build the coordinator-facing option slate from a raw provider result.
 
-    Sorted best-fit first; ties keep provider order (Python's sort is stable).
+    Sorted best-fit first. A favourite may break a tie WITHIN a fit band but can
+    never cross one — otherwise the marker becomes a soft pre-decide, biasing the
+    coordinator toward a venue the data says is a worse fit. History is context
+    only and never affects ordering at all.
+
     Every input venue appears in the output — that invariant is test-enforced.
     """
+    favourites = favourites or set()
+    history = history or {}
     options: List[DecisionOption] = []
     for v in venues:
         fit = classify_fit(v.capacity, audience)
+        ref = venue_id(v)
+        uses = history.get(ref, [])
+        data = {
+            "capacity": v.capacity,
+            "rating": v.rating,
+            "city": v.city,
+            "fit": fit,
+            "venue_ref": ref,
+            "map_url": _map_url(v),
+            "favourite": ref in favourites,
+            "used_before": len(uses),
+        }
+        if v.website:
+            data["website"] = v.website
         options.append(
             DecisionOption(
                 key=_slug(v.name),
                 label=v.name,
-                reasoning=_reasoning(v, audience, fit),
-                data={
-                    "capacity": v.capacity,
-                    "rating": v.rating,
-                    "city": v.city,
-                    "fit": fit,
-                },
+                reasoning=_reasoning(v, audience, fit) + _history_sentence(uses),
+                data=data,
             )
         )
-    options.sort(key=lambda o: _FIT_RANK[o.data["fit"]])
+    # Fit is the primary key; favourite only breaks ties inside a band.
+    options.sort(key=lambda o: (_FIT_RANK[o.data["fit"]],
+                                0 if o.data["favourite"] else 1))
     return options
