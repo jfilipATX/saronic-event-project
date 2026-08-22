@@ -108,7 +108,15 @@ class PlaybookSectionVM:
     url: str
 
 
-def create_app(db_path: str = "events.db") -> FastAPI:
+def create_app(db_path: Optional[str] = None) -> FastAPI:
+    """Build the app.
+
+    ``db_path`` defaults to ``$DB_PATH`` (then ``events.db``) rather than a bare
+    literal: uvicorn's ``--factory`` mode calls this with no arguments, so a
+    default baked in at the call site would silently ignore the environment and
+    quietly write to a different database than the rest of the tooling.
+    """
+    db_path = db_path or os.environ.get("DB_PATH", "events.db")
     global CURRENT_DB
     CURRENT_DB = db_path
     app = FastAPI(title="Saronic Event Tool")

@@ -117,3 +117,35 @@ class TestCheckinScreen:
         body = client.get(f"/events/{planned}/checkin").text.lower()
         assert "signing_secret" not in body
         assert "event_signing_secret" not in body
+
+
+class TestFactoryHonoursDbPathEnv:
+    """uvicorn --factory calls create_app() with no args.
+
+    A literal default here silently ignored $DB_PATH, so the server wrote to
+    events.db while issue_invite() wrote to the configured database — invites
+    scanned as 'tampered' for a reason that looked like a signing bug.
+    """
+
+    def test_create_app_with_no_args_uses_db_path_env(self, tmp_path, monkeypatch):
+        import app.main as main_mod
+
+        target = str(tmp_path / "from_env.db")
+        monkeypatch.setenv("DB_PATH", target)
+        main_mod.create_app()
+        assert main_mod.CURRENT_DB == target
+
+    def test_explicit_argument_still_wins(self, tmp_path, monkeypatch):
+        import app.main as main_mod
+
+        monkeypatch.setenv("DB_PATH", str(tmp_path / "env.db"))
+        explicit = str(tmp_path / "explicit.db")
+        main_mod.create_app(explicit)
+        assert main_mod.CURRENT_DB == explicit
+
+    def test_falls_back_to_events_db_when_unset(self, monkeypatch):
+        import app.main as main_mod
+
+        monkeypatch.delenv("DB_PATH", raising=False)
+        main_mod.create_app()
+        assert main_mod.CURRENT_DB == "events.db"
