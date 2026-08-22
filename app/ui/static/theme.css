@@ -98,6 +98,7 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   padding: var(--space-md); cursor: pointer;
   font-family: var(--font-display); font-stretch: 125%;
   font-size: 0.875rem; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+  display: inline-block; text-decoration: none;
 }
 .btn-quiet:hover { color: var(--color-neutral); border-color: var(--color-steel); }
 

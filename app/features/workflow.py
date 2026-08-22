@@ -102,11 +102,7 @@ class CoordinatorWorkflow:
         repo.record_decision(self.conn, Decision(
             event_id=event_id,
             step="venue",
-            question=(
-                f"Which venue should host the event? (No venues found for "
-                f"{city or 'this city'}.)" if blocked
-                else "Which venue should host the event?"
-            ),
+            question="Which venue should host the event?",
             options=options,
             blocked_reason=blocked,
         ))

@@ -58,7 +58,8 @@ class TestUnknownCityDoesNotCrashTheChain:
         wf.choose(eid, step="event_type", key="convention")
         wf.choose(eid, step="audience", key="baseline")
         blocked = wf.pending(eid)[0]
-        assert UNKNOWN_CITY in blocked.question
+        # The question stays clean ("Which venue...?"); the city and the why
+        # live in blocked_reason, which every surface renders alongside it.
         assert blocked.blocked_reason
         assert UNKNOWN_CITY in blocked.blocked_reason
 
