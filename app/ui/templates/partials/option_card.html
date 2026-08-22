@@ -42,7 +42,7 @@
     <form method="post" action="/events/{{ event_id }}/venues/{{ option.data.venue_ref }}/favourite"
           class="favourite-form">
       <input type="hidden" name="on" value="{{ 0 if option.data.favourite else 1 }}">
-      <button class="btn-quiet" type="submit"
+      <button class="btn-quiet {% if option.data.favourite %}is-active{% endif %}" type="submit"
               title="{{ 'Remove from favourites' if option.data.favourite else 'Mark as a favourite' }}">
         {% if option.data.favourite %}★ Favourite{% else %}☆ Favourite{% endif %}
       </button>

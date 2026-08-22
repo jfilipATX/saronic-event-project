@@ -102,6 +102,14 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 }
 .btn-quiet:hover { color: var(--color-neutral); border-color: var(--color-steel); }
 
+/* compact secondary action inside an option card (e.g. favourite toggle):
+   must not compete with the primary Choose button for visual weight */
+.option-card .btn-quiet {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+}
+.option-card .btn-quiet.is-active { color: var(--color-tertiary); border-color: var(--color-tertiary); }
+
 /* ── option cards (venue / audience / event-type slates) ──── */
 .option-list { display: flex; flex-direction: column; gap: var(--space-md); margin: 0; padding: 0; list-style: none; }
 
