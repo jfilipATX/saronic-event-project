@@ -132,6 +132,15 @@ def search_venues(client, event_id: int, city: str, state: str,
 
     prompt = build_search_prompt(city, state, capacity, amenities)
 
+    # Per-event cap: halt before the call (and before the offline early-return)
+    # if this event already met its ceiling. Manual trigger must not be
+    # unbounded regardless of provider mode.
+    if per_event_cap_usd is not None and ledger is not None:
+        from app.claude.errors import BudgetExceededError
+        if ledger.total_for_event(event_id) >= per_event_cap_usd:
+            raise BudgetExceededError(spent=ledger.total_for_event(event_id),
+                                      limit=per_event_cap_usd)
+
     if client is None:
         return [DecisionOption(
             key="venue_search::offline",
@@ -140,13 +149,6 @@ def search_venues(client, event_id: int, city: str, state: str,
                        "works without a Claude call. Run with a key to get real "
                        "candidates."),
             data={"value": "offline", "source": "venue_search"})]
-
-    # Per-event cap: halt before the call if this event already met its ceiling.
-    if per_event_cap_usd is not None and ledger is not None:
-        from app.claude.errors import BudgetExceededError
-        if ledger.total_for_event(event_id) >= per_event_cap_usd:
-            raise BudgetExceededError(spent=ledger.total_for_event(event_id),
-                                      limit=per_event_cap_usd)
 
     raw = client.complete(
         system=SYSTEM, prompt=prompt, max_tokens=_MAX_OUTPUT_TOKENS,
