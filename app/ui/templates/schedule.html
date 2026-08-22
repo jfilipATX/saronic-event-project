@@ -1,5 +1,5 @@
-<!-- schedule.html — event start/end date-times (P4-3).
-     Context: event, event_id, window, description, problem. -->
+<!-- schedule.html — flexible / multi-day event dates (P5-2).
+     Context: event, event_id, days (list of DayWindow), description, problem. -->
 {% extends "base.html" %}
 {% block title %}Schedule — {{ event.name }}{% endblock %}
 {% block content %}
@@ -17,22 +17,44 @@
   <p class="muted">{{ description }}</p>
 
   <form method="post" action="/events/{{ event_id }}/schedule">
-    <div class="form-row">
-      <label class="muted">Starts
-        <input class="input" type="datetime-local" name="starts_at"
-               value="{{ window.start or '' }}">
-      </label>
-      <label class="muted">Ends
-        <input class="input" type="datetime-local" name="ends_at"
-               value="{{ window.end or '' }}">
-      </label>
-      <button class="btn-primary" type="submit">Save schedule</button>
-    </div>
+    <p class="muted">Add a row per day. Times are optional while you are still
+    scoping — leave them blank to mark a day "on" without fixed hours. Leave a
+    row's date blank to drop that day.</p>
+    {% for d in days %}
+      <div class="form-stack day-row">
+        <label class="muted">Day {{ loop.index }}
+          <input class="input" type="date" name="day_{{ loop.index0 }}_date"
+                 value="{{ d.date }}">
+        </label>
+        <label class="muted">Opens
+          <input class="input" type="time" name="day_{{ loop.index0 }}_open"
+                 value="{{ d.open or '' }}">
+        </label>
+        <label class="muted">Closes
+          <input class="input" type="time" name="day_{{ loop.index0 }}_close"
+                 value="{{ d.close or '' }}">
+        </label>
+      </div>
+    {% endfor %}
+    {% if not days %}
+      <div class="form-stack day-row">
+        <label class="muted">Day 1
+          <input class="input" type="date" name="day_0_date">
+        </label>
+        <label class="muted">Opens
+          <input class="input" type="time" name="day_0_open">
+        </label>
+        <label class="muted">Closes
+          <input class="input" type="time" name="day_0_close">
+        </label>
+      </div>
+    {% endif %}
+    <button class="btn-primary" type="submit">Save schedule</button>
   </form>
 
   <p class="muted">
-    Dates are optional while you are still scoping. Leave both blank to
-    unschedule. Times are local to the venue — the run of show is built on this
-    window, so it is worth getting right before you plan the day.
+    Dates are optional while you are still scoping. Clear every row's date to
+    unschedule. Times are local to the venue — the run of show is built on these
+    days, so it is worth getting right before you plan the day.
   </p>
 {% endblock %}

@@ -328,6 +328,18 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   color: var(--color-steel, #9DA7AF);
 }
 
+/* P5-9-light: the check-in assignment callout. Neutral, not an alert — it
+   signals who operates the desk, it does not report an error. */
+.owner-note {
+  border: 1px solid var(--color-steel, #9DA7AF);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin: 0.5rem 0 1rem;
+  color: var(--color-ink, #1b1f24);
+  font-size: 0.9rem;
+}
+.owner-note strong { color: var(--color-steel, #9DA7AF); }
+
 .staff-roster { list-style: none; padding: 0; margin: 0 0 1rem; }
 .roster-row {
   display: flex;

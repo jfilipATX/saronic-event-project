@@ -6,6 +6,7 @@
 {% block content %}
   <p class="eyebrow">Day of</p>
   <h1>Run of show</h1>
+  <p class="muted no-print">{{ event.location }}</p>
   <p class="muted no-print">{{ schedule_text }}</p>
 
   {% if not window.is_set %}

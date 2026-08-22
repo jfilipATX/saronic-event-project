@@ -22,6 +22,7 @@ from typing import List, Optional
 
 from app.db import repository as repo
 from app.db.models import Decision, DecisionOption, Event, EventVariable
+from app.features.location import location_line
 
 #: Canonical order of the coordinator's workflow. Anything not listed here keeps
 #: its insertion order and renders after these.
@@ -188,12 +189,18 @@ def render_markdown(playbook: Playbook) -> str:
     out: List[str] = [f"# {ev.name}", ""]
 
     meta = []
-    if ev.city:
-        meta.append(f"**City:** {ev.city}")
+    location = location_line(ev.city, ev.state, ev.country)
+    if location:
+        meta.append(f"**Location:** {location}")
     if ev.event_type:
         meta.append(f"**Type:** {ev.event_type}")
     if ev.audience_estimate:
         meta.append(f"**Audience estimate:** {ev.audience_estimate:,}")
+    if ev.owner_name:
+        owner = ev.owner_name
+        if ev.owner_role:
+            owner += f" — {ev.owner_role}"
+        meta.append(f"**Event owner:** {owner}")
     if meta:
         out += [" · ".join(meta), ""]
 

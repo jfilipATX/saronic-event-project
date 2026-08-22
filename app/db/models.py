@@ -15,12 +15,33 @@ class Event:
     id: Optional[int] = None
     name: str = ""
     city: Optional[str] = None
+    #: P5-3 location precision. Saronic runs events across states and countries,
+    #: so a bare city is ambiguous (Springfield, IL vs Springfield, MA). state is
+    #: the US postal abbreviation when applicable; country defaults to "US".
+    state: Optional[str] = None
+    country: Optional[str] = None
     audience_estimate: Optional[int] = None
     event_type: Optional[str] = None
     #: P4-3 event window. Optional: "not scheduled yet" is a real state.
     starts_at: Optional[str] = None
     ends_at: Optional[str] = None
+    #: P5-9-light: the accountable event owner (name + optional role label).
+    #: Optional — a legacy/blank event simply has no named owner. Display-only;
+    #: there is no auth, so this is a signal of accountability, not access.
+    owner_name: Optional[str] = None
+    owner_role: Optional[str] = None
     created_at: Optional[str] = None
+
+    @property
+    def location(self) -> str:
+        """Canonical "City, ST, Country" line (P5-3).
+
+        Country defaults to US at creation, so a blank country never renders as
+        an empty fragment. State/country abbreviations are applied by the helper
+        so same-named cities (Springfield, IL vs MA) stay distinguishable.
+        """
+        from app.features.location import location_line
+        return location_line(self.city, self.state, self.country)
 
 
 @dataclass

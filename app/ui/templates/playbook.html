@@ -12,6 +12,9 @@
   <p class="muted">{{ schedule }}
     · <a class="link-accent" href="/events/{{ event.id }}/schedule">Edit schedule</a>
   </p>
+  {% if owner %}
+  <p class="muted"><strong>Event owner:</strong> {{ owner }}</p>
+  {% endif %}
 
   <p class="muted">Claude API spend:
     {% if claude_spend %}${{ "%.2f"|format(claude_spend) }}
