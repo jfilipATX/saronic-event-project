@@ -43,7 +43,8 @@ class TestBuildAudienceOptions:
 
     def test_conservative_and_ambitious_bracket_the_baseline(self):
         opts = build_audience_options(base=5000, city="Austin", event_type="convention")
-        numbers = sorted(o.data["audience"] for o in opts)
+        # The custom option carries no number until the coordinator supplies one.
+        numbers = sorted(o.data["audience"] for o in opts if "audience" in o.data)
         assert numbers[0] < 5000 < numbers[-1]
 
     def test_every_option_carries_reasoning_for_the_human(self):
@@ -56,7 +57,7 @@ class TestBuildAudienceOptions:
 
     def test_zero_base_still_produces_a_usable_slate(self):
         opts = build_audience_options(base=0, city="Nowhere", event_type="other")
-        assert opts and all(o.data["audience"] >= 0 for o in opts)
+        assert opts and all(o.data["audience"] >= 0 for o in opts if "audience" in o.data)
 
 
 class TestSanityCheck:
@@ -117,7 +118,8 @@ class TestSanityInsightReachesTheOptions:
             base=4000, city="Austin", event_type="convention",
             venues=_austin_slate(),
         )
-        states = {o.data["audience"]: o.data["sanity"] for o in opts}
+        states = {o.data["audience"]: o.data["sanity"]
+                  for o in opts if "audience" in o.data}
         assert states[2400] == SANITY_OK
         assert states[4000] == SANITY_EXCEEDS_MOST
         assert len(set(states.values())) > 1

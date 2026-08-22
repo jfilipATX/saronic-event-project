@@ -77,6 +77,10 @@ class Decision:
     question: str = ""
     options: List[DecisionOption] = field(default_factory=list)
     chosen_key: Optional[str] = None
+    #: Coordinator-supplied value for an option that asks for one (data.requires_value).
+    #: The chosen_key guard stays intact — the option WAS offered — while the number
+    #: or text the human typed rides here.
+    chosen_value: Optional[str] = None
     decided_by: Optional[str] = None
     decided_at: Optional[str] = None
     note: Optional[str] = None
@@ -105,3 +109,24 @@ class Decision:
     def alternatives(self) -> List[DecisionOption]:
         """Roads not taken — preserved so the human can revisit the trade-off."""
         return [o for o in self.options if o.key != self.chosen_key]
+
+    @property
+    def display_label(self) -> str:
+        """Label as the coordinator should see it, everywhere.
+
+        A supplied value must read identically to a preset one in the playbook,
+        the deck and the history — the audit trail should not betray whether the
+        number was offered or typed.
+        """
+        chosen = self.chosen_option
+        if chosen is None:
+            return ""
+        if not self.chosen_value:
+            return chosen.label
+        template = chosen.data.get("value_label")
+        if template:
+            try:
+                return template.format(value=int(self.chosen_value))
+            except (ValueError, TypeError, KeyError):
+                return template.replace("{value:,}", self.chosen_value)
+        return f"{chosen.label}: {self.chosen_value}"

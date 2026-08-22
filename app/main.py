@@ -216,19 +216,21 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "step_total": len(CHAIN),
                 "decision": decision,
                 "chosen_key": decision.chosen_key,
+                "chosen_value": decision.chosen_value,
                 "event_id": event_id,
             })
         finally:
             conn.close()
 
     @app.post("/events/{event_id}/decide")
-    def decide(event_id: int, step: str = Form(...), key: str = Form(...)):
+    def decide(event_id: int, step: str = Form(...), key: str = Form(...),
+               value: Optional[str] = Form(None)):
         conn = connect()
         try:
             load_event(conn, event_id)
             wf = CoordinatorWorkflow(conn)
             try:
-                wf.choose(event_id, step=step, key=key)
+                wf.choose(event_id, step=step, key=key, value=value)
             except ValueError as exc:
                 # An unoffered key is a bad request, not a server fault.
                 raise HTTPException(status_code=400, detail=str(exc))

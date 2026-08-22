@@ -119,8 +119,31 @@ class CoordinatorWorkflow:
 
     # ── the human's move ─────────────────────────────────────────────────────
 
+    def _validate_value(self, decision: Decision, key: str,
+                        value: Optional[str]) -> Optional[str]:
+        """Check a coordinator-supplied value against the option that asked for it.
+
+        Rejecting here rather than at the database keeps the error close to the
+        human who typed it, and keeps invalid numbers out of the decision log
+        entirely rather than stored-then-ignored.
+        """
+        option = next((o for o in decision.options if o.key == key), None)
+        if option is None or not option.data.get("requires_value"):
+            return None
+        if value is None or not str(value).strip():
+            raise ValueError(
+                f"The {option.label!r} option requires a value — enter a number."
+            )
+        raw = str(value).strip().replace(",", "")
+        if not raw.isdigit() or int(raw) <= 0:
+            raise ValueError(
+                f"{value!r} is not a whole number of attendees above zero."
+            )
+        return str(int(raw))
+
     def choose(
-        self, event_id: int, step: str, key: str, by: str = "coordinator"
+        self, event_id: int, step: str, key: str, by: str = "coordinator",
+        value: Optional[str] = None,
     ) -> int:
         """Record the coordinator's answer to a staged step and advance the chain."""
         decision = self._live(event_id, step)
@@ -130,16 +153,19 @@ class CoordinatorWorkflow:
                 "answer the earlier steps first."
             )
         if not decision.is_pending:
-            return self.revise(event_id, step=step, key=key, by=by)
+            return self.revise(event_id, step=step, key=key, by=by, value=value)
+
+        resolved = self._validate_value(decision, key, value)
 
         # Re-record with the choice. record_decision() rejects unoffered keys.
         decision.chosen_key = key
+        decision.chosen_value = resolved
         decision.decided_by = by
         new_id = repo.record_decision(self.conn, decision)
         self.conn.execute(
             "UPDATE decisions SET superseded_by=? WHERE id=?", (new_id, decision.id)
         )
-        self._apply_to_event(event_id, step, decision)
+        self._apply_to_event(event_id, step, repo.get_decision(self.conn, new_id))
         self._stage_next_after(event_id, step)
         return new_id
 
@@ -150,13 +176,16 @@ class CoordinatorWorkflow:
         key: str,
         note: Optional[str] = None,
         by: str = "coordinator",
+        value: Optional[str] = None,
     ) -> int:
         """Change an answered step, then re-stage everything downstream of it."""
         decision = self._live(event_id, step)
         if decision is None:
             raise LookupError(f"Step {step!r} has not been staged for event {event_id}.")
+        resolved = self._validate_value(decision, key, value)
         new_id = repo.revise_decision(
-            self.conn, decision.id, chosen_key=key, note=note, decided_by=by
+            self.conn, decision.id, chosen_key=key, note=note, decided_by=by,
+            chosen_value=resolved,
         )
         revised = repo.get_decision(self.conn, new_id)
         self._apply_to_event(event_id, step, revised)
@@ -183,7 +212,10 @@ class CoordinatorWorkflow:
                 "UPDATE events SET event_type=? WHERE id=?", (chosen.key, event_id)
             )
         elif step == "audience":
+            number = chosen.data.get("audience")
+            if chosen.data.get("requires_value") and decision.chosen_value:
+                number = int(decision.chosen_value)
             self.conn.execute(
                 "UPDATE events SET audience_estimate=? WHERE id=?",
-                (chosen.data.get("audience"), event_id),
+                (number, event_id),
             )

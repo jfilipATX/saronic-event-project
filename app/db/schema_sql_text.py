@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     question      TEXT NOT NULL,
     options_json  TEXT NOT NULL,
     chosen_key    TEXT,
+    chosen_value  TEXT,
     decided_by    TEXT,
     decided_at    TEXT,
     note          TEXT,

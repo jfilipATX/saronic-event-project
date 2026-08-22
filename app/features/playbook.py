@@ -137,7 +137,7 @@ def compose_playbook(conn, event_id: int) -> Playbook:
                 title=_title_for(d.step),
                 question=d.question,
                 chosen_key=chosen.key,
-                chosen_label=chosen.label,
+                chosen_label=d.display_label or chosen.label,
                 reasoning=chosen.reasoning,
                 alternatives=d.alternatives,
                 decided_by=d.decided_by,

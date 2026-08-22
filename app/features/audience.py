@@ -37,6 +37,11 @@ UNDERSHOOT_RATIO = 0.25
 CONSERVATIVE_RATIO = 0.6
 AMBITIOUS_RATIO = 1.3
 
+#: Key for the coordinator-supplied number (P2-2). Offered like any other option
+#: so the never-record-an-unoffered-choice guard stays intact; the number itself
+#: is persisted as the decision's chosen_value.
+CUSTOM_KEY = "custom"
+
 
 @dataclass
 class SanityResult:
@@ -174,4 +179,24 @@ def build_audience_options(
                 data=data,
             )
         )
+
+    # ── Coordinator-supplied number (P2-2) ──
+    # Sorted last: the modelled options are what the tool contributes, and a
+    # blank input should not be the first thing the eye lands on.
+    options.append(
+        DecisionOption(
+            key=CUSTOM_KEY,
+            label="Custom",
+            reasoning=(
+                "Your own number — use this when you have a confirmed invite list "
+                "or headcount. Downstream venue fit recalculates against it exactly "
+                "like a modelled estimate."
+            ),
+            data={
+                "requires_value": True,
+                "value_label": "Custom: {value:,} attendees",
+                "input_hint": "attendees",
+            },
+        )
+    )
     return options

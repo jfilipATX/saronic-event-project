@@ -123,8 +123,8 @@ def list_variables(conn: sqlite3.Connection, event_id: int) -> List[EventVariabl
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DECISION_COLUMNS = (
-    "id, event_id, step, question, options_json, chosen_key, decided_by, "
-    "decided_at, note, superseded_by, blocked_reason"
+    "id, event_id, step, question, options_json, chosen_key, chosen_value, "
+    "decided_by, decided_at, note, superseded_by, blocked_reason"
 )
 
 #: Columns added after the first release, as (table, column, DDL type). The schema
@@ -133,6 +133,7 @@ _DECISION_COLUMNS = (
 #: query naming them would fail. Applied idempotently on every init_db().
 _ADDED_COLUMNS = (
     ("decisions", "blocked_reason", "TEXT"),
+    ("decisions", "chosen_value", "TEXT"),
 )
 
 
@@ -182,12 +183,26 @@ def _row_to_decision(row: sqlite3.Row) -> Decision:
         question=row["question"],
         options=_load_options(row["options_json"]),
         chosen_key=row["chosen_key"],
+        chosen_value=row["chosen_value"],
         decided_by=row["decided_by"],
         decided_at=row["decided_at"],
         note=row["note"],
         superseded_by=row["superseded_by"],
         blocked_reason=row["blocked_reason"],
     )
+
+
+def _resolved_value(decision: Decision) -> Optional[str]:
+    """The value to persist for the chosen option.
+
+    Only options that declare ``data["requires_value"]`` may carry one. A stray
+    value on a preset option is dropped rather than stored, so the audit trail
+    cannot accumulate values that never influenced anything.
+    """
+    chosen = decision.chosen_option
+    if chosen is None or not chosen.data.get("requires_value"):
+        return None
+    return decision.chosen_value
 
 
 def _validate(decision: Decision) -> None:
@@ -214,13 +229,15 @@ def record_decision(conn: sqlite3.Connection, decision: Decision) -> int:
         decided_at = _now()
     cur = conn.execute(
         "INSERT INTO decisions (event_id, step, question, options_json, chosen_key, "
-        "decided_by, decided_at, note, blocked_reason) VALUES (?,?,?,?,?,?,?,?,?)",
+        "chosen_value, decided_by, decided_at, note, blocked_reason) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
             decision.event_id,
             decision.step,
             decision.question,
             _dump_options(decision.options),
             decision.chosen_key,
+            _resolved_value(decision),
             decision.decided_by,
             decided_at,
             decision.note,
@@ -245,6 +262,7 @@ def revise_decision(
     note: Optional[str] = None,
     decided_by: Optional[str] = None,
     options: Optional[List[DecisionOption]] = None,
+    chosen_value: Optional[str] = None,
 ) -> int:
     """Supersede ``decision_id`` with a new row carrying the revised choice.
 
@@ -266,6 +284,7 @@ def revise_decision(
         question=original.question,
         options=options if options is not None else original.options,
         chosen_key=chosen_key if chosen_key is not None else original.chosen_key,
+        chosen_value=chosen_value if chosen_value is not None else original.chosen_value,
         decided_by=decided_by if decided_by is not None else original.decided_by,
         note=note,
     )

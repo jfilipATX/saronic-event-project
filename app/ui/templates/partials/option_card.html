@@ -3,7 +3,13 @@
      Works for every slate (event type, audience, venue); venue options carry
      data.fit / data.capacity / data.rating and get the badge + meta row. -->
 <li class="option-card {% if option.key == chosen_key %}is-chosen{% endif %}">
-  <span class="option-label">{{ option.label }}</span>
+  <span class="option-label">
+    {% if option.key == chosen_key and decision is defined and decision.display_label %}
+      {{ decision.display_label }}
+    {% else %}
+      {{ option.label }}
+    {% endif %}
+  </span>
 
   {% if option.data.fit %}
     <span class="fit-badge fit-{{ option.data.fit }}">
@@ -25,9 +31,14 @@
   <p class="option-reasoning">{{ option.reasoning }}</p>
 
   <div class="option-actions">
-    <form method="post" action="/events/{{ event_id }}/decide">
+    <form method="post" action="/events/{{ event_id }}/decide" class="form-row">
       <input type="hidden" name="step" value="{{ step }}">
       <input type="hidden" name="key" value="{{ option.key }}">
+      {% if option.data.requires_value %}
+        <input class="input" type="number" name="value" min="1" step="1"
+               placeholder="{{ option.data.input_hint or 'value' }}"
+               value="{{ chosen_value if option.key == chosen_key else '' }}" required>
+      {% endif %}
       <button class="btn-primary" type="submit">
         {% if option.key == chosen_key %}Chosen{% else %}Choose{% endif %}
       </button>
