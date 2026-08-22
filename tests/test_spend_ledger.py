@@ -273,7 +273,9 @@ class TestSpendInTheUi:
 
     def test_the_playbook_shows_this_events_spend(self, client, eid):
         self._log(eid, surface="slide_copy", model="claude-opus-5", usd=0.0182)
-        assert "0.0182" in client.get(f"/events/{eid}/playbook").text
+        # Headline figures round to whole cents for the coordinator; the
+        # per-row ledger on /usage keeps full precision.
+        assert "$0.02" in client.get(f"/events/{eid}/playbook").text
 
     def test_the_playbook_excludes_another_events_spend(self, client, eid):
         r = client.post("/events", data={"name": "Other", "city": "Austin"},
@@ -286,7 +288,7 @@ class TestSpendInTheUi:
         self._log(eid, surface="slide_copy", model="claude-opus-5",
                   input_tokens=800, output_tokens=120, usd=0.0182)
         page = client.get("/usage").text
-        assert "Claude API spend: $0.0182" in page
+        assert "Claude API spend: $0.02" in page
         assert "slide_copy" in page
         assert "Fleet Week" in page
 
@@ -299,7 +301,7 @@ class TestSpendInTheUi:
     def test_the_global_total_includes_unattributed_calls(self, client, eid):
         self._log(eid, surface="slide_copy", model="m", usd=0.0100)
         self._log(None, surface="model_probe", model="m", usd=0.0042)
-        assert "Claude API spend: $0.0142" in client.get("/usage").text
+        assert "Claude API spend: $0.01" in client.get("/usage").text
 
     def test_a_failed_call_is_shown_with_its_reason(self, client, eid):
         self._log(eid, surface="slide_copy", model="m", usd=0.0,

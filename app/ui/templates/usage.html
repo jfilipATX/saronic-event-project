@@ -5,7 +5,7 @@
 {% block content %}
   <p class="eyebrow">Bookkeeping</p>
   <h1>Usage &amp; spend</h1>
-  <h2>Claude API spend: ${{ "%.4f"|format(total) }}</h2>
+  <h2>Claude API spend: ${{ "%.2f"|format(total) }}</h2>
   <p class="muted">
     Every Claude call this tool has made, priced. This is API spend only — it is
     not what the event costs to run. Calls that failed before billing show
