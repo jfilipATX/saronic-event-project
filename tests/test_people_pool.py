@@ -17,6 +17,9 @@ The interesting invariants, pinned here:
   owners — the rows keep their ids.
 * **An event-specific-only person is not shared**, matching the request that
   some staff are event-scoped and others are reusable.
+* **`can_check_in` is per-event, not global** (P5-9). Granting Dana check-in on
+  Event A must not grant it on Event B, while her persistent `role` carries to
+  both. This is the exact claim verified only by live QA before — now pinned.
 """
 from __future__ import annotations
 
@@ -174,3 +177,44 @@ class TestStaffMigration:
         repo.migrate_staff_to_people(db)
         repo.migrate_staff_to_people(db)
         assert [p.id for p in repo.list_people(db)] == [1]
+
+
+class TestPerEventCheckInIsolation:
+    """P5-9 — the per-event gate must not bleed across events.
+
+    This is the one P5-5 invariant that was proven only by live browser QA
+    before a committed regression guard existed. Dana granted check-in on Event
+    A must read can_check_in=1 there and can_check_in=0 on Event B, while her
+    persistent role carries to both.
+    """
+
+    def test_check_in_grant_is_per_event_not_global(self, conn, event):
+        import app.db.repository as repo
+        from app.db.models import Person, Event
+
+        a = event
+        b = repo.create_event(conn, Event(name="Other", city="Austin"))
+        dana = repo.add_person(conn, Person(name="Dana Reyes", role="Lead"))
+        # Grant check-in on A only.
+        repo.assign_staff(conn, a, dana, role="Lead", can_check_in=True)
+        # Plain assignment on B — no grant.
+        repo.assign_staff(conn, b, dana, role="Lead", can_check_in=False)
+
+        arow = {r["person_id"]: r for r in repo.event_staff_rows(conn, a)}[dana]
+        brow = {r["person_id"]: r for r in repo.event_staff_rows(conn, b)}[dana]
+        assert arow["can_check_in"] == 1
+        assert brow["can_check_in"] == 0
+        # Role persists across both assignments.
+        assert arow["role"] == "Lead" and brow["role"] == "Lead"
+
+    def test_re_assigning_without_grant_clears_a_prior_grant(self, conn, event):
+        """Re-attaching the same person without can_check_in must downgrade,
+        not leave a stale per-event grant."""
+        import app.db.repository as repo
+        from app.db.models import Person
+
+        dana = repo.add_person(conn, Person(name="Dana", role="Lead"))
+        repo.assign_staff(conn, event, dana, role="Lead", can_check_in=True)
+        assert repo.event_staff_rows(conn, event)[0]["can_check_in"] == 1
+        repo.assign_staff(conn, event, dana, role="Lead", can_check_in=False)
+        assert repo.event_staff_rows(conn, event)[0]["can_check_in"] == 0
