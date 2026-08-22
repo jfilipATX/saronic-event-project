@@ -186,6 +186,16 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .mt-xl { margin-top: var(--space-xl); }
 .nav-sub { font-size: 0.875rem; margin: 0; }
 
+/* ── labelled field grid (venue amenities etc.) ───────────── */
+.field-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(10rem, 16rem);
+  gap: var(--space-sm) var(--space-md);
+  align-items: center;
+  margin: var(--space-md) 0 var(--space-lg);
+}
+.field-grid label { color: var(--color-steel); }
+
 /* ── open questions / pending callout ─────────────────────── */
 .pending-note {
   border: 1px dashed var(--color-secondary); border-radius: var(--rounded-md);

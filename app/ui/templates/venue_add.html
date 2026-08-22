@@ -77,29 +77,27 @@
       {% set _ = amenities.append(option) %}
     {% endfor %}
     {% for option in (amenities if amenities else []) %}
-      <div class="form-row">
-        <label class="muted">{{ option.label }}
-          <select class="input" name="{{ option.key }}">
-            <option value="yes" {% if option.data.value == 'yes' %}selected{% endif %}>Yes</option>
-            <option value="no" {% if option.data.value == 'no' %}selected{% endif %}>No</option>
-            <option value="unknown" {% if option.data.value == 'unknown' %}selected{% endif %}>Not stated</option>
-          </select>
-        </label>
+      <div class="field-grid">
+        <label for="{{ option.key }}">{{ option.label }}</label>
+        <select class="input" id="{{ option.key }}" name="{{ option.key }}">
+          <option value="yes" {% if option.data.value == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if option.data.value == 'no' %}selected{% endif %}>No</option>
+          <option value="unknown" {% if option.data.value == 'unknown' %}selected{% endif %}>Not stated</option>
+        </select>
       </div>
       <p class="option-reasoning">{{ option.reasoning }}</p>
     {% endfor %}
     {% if not amenities %}
+      <div class="field-grid">
       {% for key, label in amenity_defaults %}
-        <div class="form-row">
-          <label class="muted">{{ label }}
-            <select class="input" name="amenity_{{ key }}">
-              <option value="unknown" selected>Not stated</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </label>
-        </div>
+        <label for="amenity_{{ key }}">{{ label }}</label>
+        <select class="input" id="amenity_{{ key }}" name="amenity_{{ key }}">
+          <option value="unknown" selected>Not stated</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
       {% endfor %}
+      </div>
     {% endif %}
 
     <div class="form-row">
