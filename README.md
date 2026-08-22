@@ -36,7 +36,7 @@ The coordinator walks a decision chain — **event type → audience estimate �
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && chmod 600 .env
-.venv/bin/python -m pytest tests/ -q        # 567 tests, all offline
+.venv/bin/python -m pytest tests/ -q        # 782 tests, all offline
 .venv/bin/uvicorn app.main:create_app --factory
 ```
 
@@ -83,6 +83,28 @@ The other surfaces (venue fit arithmetic, audience bracketing) stay deterministi
 
 The most useful finding generalizes beyond this project: **`claude-opus-5` emits thinking blocks that draw from the same `max_tokens` budget as the answer.** With a 700-token budget, the model spent it all thinking and returned an empty text block — billed, reported "ok," zero characters of output. A blank that looks like success is the most dangerous failure shape; on a title slide it ships an empty headline to a room. The client now raises `EmptyResponseError` (spend still recorded — we were billed, the meter must know), and budgets are sized for thinking *plus* output. We only caught it because the evidence pass checks character counts instead of trusting status flags.
 
+### What testing this taught us
+
+Two findings that generalize past this codebase, both discovered by a test that
+should have passed and didn't.
+
+**A fixture has to be as varied as the thing it stands in for.** The backdrop
+classifier separates photographs from logo cards by counting distinct colours in
+a downscaled sample — real Saronic blog photos hold 1800–3800, partnership logo
+cards 214–242. Two synthetic "photographs" failed it and both were the fixture's
+fault: a 4×4 block pattern held 42 colours, and per-pixel random noise held 475,
+because the classifier's LANCZOS downscale averages high-frequency noise away.
+Real photographs survive downscaling because their variation is *structured at
+every scale*. The near-miss is the lesson: the tempting fix was lowering the
+threshold, which would have broken real classification to make a fake image
+pass.
+
+**Empty-state UI tests prove only that a page renders when there is nothing to
+render.** A venue-scrape template used `selectattr('key', 'match', …)` — Jinja
+has no `match` test — and 33 tests passed while a real scrape returned 500,
+because every one of them exercised the empty-options path where the loop never
+runs. Any new template loop now gets a populated-branch test.
+
 ### Cost controls
 
 - `SpendMeter` halts **before** the next call, not after (test-pinned: SDK call count stays 0 once the budget is exhausted).
@@ -106,7 +128,7 @@ Every route translates to `CoordinatorWorkflow`, so the UI cannot drift from sta
 
 ## Verification
 
-- **567 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
+- **782 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
 - **Secret hygiene:** `scripts/audit_secrets.py` scans all tracked files *and full commit history* for key values (not names), wired as a pre-push hook. Verified in both directions — clean on the real repo, and a negative control with a staged key gets caught and blocked.
 - Evidence artifacts are tracked deliberately: [`generated/`](generated/) holds exported playbooks and the complete Claude pass transcripts.
 
