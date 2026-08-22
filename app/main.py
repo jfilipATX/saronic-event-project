@@ -51,7 +51,7 @@ from app.features.venue_search import (
     estimate_search_cost,
     search_venues,
 )
-from app.claude.errors import BudgetExceededError
+from app.claude.errors import BudgetExceededError, ClaudeError
 from app.claude.ledger import SpendLedger
 from app.config import CONFIG
 from app.features.image_library import (
@@ -138,7 +138,6 @@ def _scrape_client(conn=None):
     cfg = load_config()
     if not cfg.claude_enabled:
         return None
-    from app.claude.ledger import SpendLedger
 
     return get_client(cfg, ledger=SpendLedger(conn) if conn is not None else None)
 
@@ -652,8 +651,6 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # mock scaffolding onto a title slide.
         claude = None
         if CONFIG.claude_enabled:
-            from app.claude.ledger import SpendLedger
-
             claude = get_client(CONFIG, ledger=SpendLedger(conn))
         return build_deck(compose_playbook(conn, event_id), ImageResolver(stock),
                           claude_client=claude, event_id=event_id)
@@ -830,6 +827,22 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                     "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
                     "spent_usd": repo.spend_total(conn, event_id=event_id),
                     "over_cap": True,
+                })
+            except ClaudeError as exc:
+                # Provider fail-soft: a bad key / rate limit / outage must not
+                # 500 the desk. Surface it as a problem; the coordinator can
+                # retry or add venues manually.
+                return templates.TemplateResponse(request, "venue_search.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id,
+                    "problem": (f"The venue search could not run "
+                                f"({type(exc).__name__}). Nothing was charged "
+                                f"for a failed call — add venues manually "
+                                f"below, or retry."),
+                    "est_usd": 0.0, "cap_usd": CONFIG.venue_search_cap_usd,
+                    "spent_usd": repo.spend_total(conn, event_id=event_id),
+                    "over_cap": False,
                 })
             # Stage the proposals: render them as confirmable cards (proposed,
             # never auto-applied) on the search results surface. Each card posts
