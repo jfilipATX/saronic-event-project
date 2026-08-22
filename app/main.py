@@ -128,6 +128,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         conn.executescript(sql.SCHEMA)
+        # CREATE TABLE IF NOT EXISTS does not add columns to a database that
+        # already exists, so an events.db created before a schema change would
+        # otherwise 500 on the first query naming a new column. Idempotent.
+        repo.apply_migrations(conn)
+        conn.commit()
         return conn
 
     def load_event(conn, event_id: int):
