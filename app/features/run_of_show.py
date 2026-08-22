@@ -42,6 +42,21 @@ KIND_LABELS = {
 #: because a coordinator who typed 09:07 meant 09:07.
 SNAP_MINUTES = 15
 
+#: FIXED zoom. Percentage widths are auto-compression by another name: they
+#: squeeze a 38-hour event into whatever the screen is, which produced 40px
+#: blocks with titles clipped to "Load-". A readable four-hour window that
+#: scrolls beats an unreadable three-day overview that fits.
+PX_PER_15_MIN = 24
+PX_PER_HOUR = PX_PER_15_MIN * 4
+
+#: A short segment stays clickable and legible; its title ellipsizes rather
+#: than the block shrinking to a sliver.
+MIN_BLOCK_PX = 48
+
+#: Below this a block cannot hold the conflict text, so the outline carries the
+#: flag alone (and the title attribute carries the detail).
+CONFLICT_LABEL_MIN_PX = 120
+
 
 def validate_segment(segment: Segment) -> Segment:
     """Check a segment before it is stored. Names every problem at once."""
@@ -136,32 +151,73 @@ def snap_to_quarter(value: str) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M")
 
 
-def board_lanes(segments: List[Segment], window: EventWindow) -> List[dict]:
+def board_width_px(window: EventWindow) -> int:
+    """Total board width at fixed zoom. The board scrolls; it does not shrink."""
+    if not window.is_set or not window.end:
+        return 0
+    span_h = (_parse(window.end) - _parse(window.start)).total_seconds() / 3600
+    return max(0, int(round(span_h * PX_PER_HOUR)))
+
+
+def hour_ticks(window: EventWindow) -> List[dict]:
+    """The time axis. Without it a block's position is uninterpretable."""
+    if not window.is_set or not window.end:
+        return []
+    origin, finish = _parse(window.start), _parse(window.end)
+    ticks: List[dict] = []
+    cursor = origin.replace(minute=0, second=0, microsecond=0)
+    if cursor < origin:
+        cursor += timedelta(hours=1)
+    while cursor <= finish:
+        offset = (cursor - origin).total_seconds() / 3600 * PX_PER_HOUR
+        is_day_start = cursor.hour == 0
+        ticks.append({
+            "label": cursor.strftime("%H:%M"),
+            "left_px": int(round(offset)),
+            "is_day_start": is_day_start,
+            # A day boundary is where a midnight-spanning block stops being
+            # confusing, so it is labelled rather than just drawn heavier.
+            "date_label": cursor.strftime("%Y-%m-%d") if is_day_start else "",
+        })
+        cursor += timedelta(hours=1)
+    return ticks
+
+
+def board_lanes(segments: List[Segment], window: EventWindow,
+                flags: Optional[Dict[int, Dict[int, str]]] = None) -> List[dict]:
     """Lanes for the concurrency board: one row per track, time left to right.
 
-    Positions are percentages of the event window so the template needs no
-    arithmetic. Returns [] for an unscheduled event rather than inventing a
-    window — a board with no time axis would be a drawing, not a schedule.
+    Geometry is FIXED pixels per quarter hour, not percentages of the window —
+    see PX_PER_15_MIN. Returns [] for an unscheduled event rather than inventing
+    a window: a board with no time axis is a drawing, not a schedule.
+
+    ``flags`` (from conflicts_for) marks double-booked blocks. The board is the
+    view that exists to expose overlaps, so it has to carry the flag itself; a
+    conflict visible only in the list view defeats the point.
     """
     if not window.is_set or not window.end or not segments:
         return []
-    origin, finish = _parse(window.start), _parse(window.end)
-    span = (finish - origin).total_seconds()
-    if span <= 0:
+    origin = _parse(window.start)
+    if (_parse(window.end) - origin).total_seconds() <= 0:
         return []
+    flags = flags or {}
 
     lanes: Dict[str, List[dict]] = {}
     for segment in segments:
         start = _parse(snap_to_quarter(segment.start))
         end = _parse(snap_to_quarter(segment.end))
-        left = max(0.0, (start - origin).total_seconds() / span * 100)
-        right = min(100.0, (end - origin).total_seconds() / span * 100)
-        if right <= left:
-            right = min(100.0, left + 0.5)  # keep a hairline visible
+        left = (start - origin).total_seconds() / 3600 * PX_PER_HOUR
+        width = max(MIN_BLOCK_PX,
+                    (end - start).total_seconds() / 3600 * PX_PER_HOUR)
+        conflicted = bool(flags.get(segment.id))
         lanes.setdefault(segment.track, []).append({
             "segment": segment,
-            "left_pct": round(left, 3),
-            "width_pct": round(right - left, 3),
+            "left_px": int(round(max(0, left))),
+            "width_px": int(round(width)),
+            "has_conflict": conflicted,
+            # The outline always shows; the words only fit on a wide block.
+            "show_conflict_label": conflicted and width >= CONFLICT_LABEL_MIN_PX,
+            "conflict_detail": "; ".join(sorted(flags.get(segment.id, {}).values())),
         })
     return [{"track": track, "blocks": blocks} for track, blocks in lanes.items()]
 

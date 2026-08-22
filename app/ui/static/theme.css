@@ -282,11 +282,41 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .clash-note { color: #D8A24C; font-size: 0.85rem; }
 
 .board-scroll { overflow-x: auto; padding-bottom: 0.5rem; }
+/* Fixed zoom: board-inner is as wide as the event needs and SCROLLS. Never
+   width:100% — that is auto-compression, which clipped titles to "Load-". */
+.board-inner { position: relative; }
+
+.board-ticks {
+  position: relative;
+  height: 2.4rem;
+  margin-left: 8rem;
+  border-bottom: 1px solid rgba(157, 167, 175, 0.25);
+}
+.board-tick { position: absolute; top: 0; }
+.board-tick-label {
+  display: block;
+  padding-left: 0.25rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  color: var(--color-steel, #9DA7AF);
+}
+.board-tick-date {
+  display: block;
+  padding-left: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--color-neutral, #F2F6FA);
+}
+.board-tick.is-day .board-tick-label { color: var(--color-neutral, #F2F6FA); }
+
 .board-lane { display: flex; align-items: stretch; margin-bottom: 0.5rem; }
 .board-lane-label {
   flex: 0 0 8rem;
   position: sticky;
   left: 0;
+  z-index: 2;
+  padding-right: 0.5rem;
+  background: var(--color-ink, #162029);
+  border-right: 1px solid rgba(157, 167, 175, 0.25);
   font-size: 0.85rem;
   color: var(--color-steel, #9DA7AF);
   text-transform: uppercase;
@@ -295,10 +325,17 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .board-track {
   position: relative;
   flex: 1 1 auto;
-  min-width: 40rem;
-  min-height: 3rem;
+  min-height: 3.25rem;
   background: rgba(157, 167, 175, 0.06);
 }
+.board-gridline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(157, 167, 175, 0.18);
+}
+.board-gridline.is-day { width: 2px; background: rgba(242, 246, 250, 0.5); }
 .board-block {
   position: absolute;
   top: 0.25rem;
@@ -308,9 +345,17 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   background: rgba(157, 167, 175, 0.14);
   border-left: 4px solid var(--color-steel, #9DA7AF);
   border-radius: 4px;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
 }
-.board-block-title { display: block; }
+.board-block-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The outline carries the flag at ANY width — a 15-minute overlap is still a
+   double booking, and the words only fit on a wide block. */
+.owner-clash-block { outline: 2px solid #D8A24C; outline-offset: -2px; }
 .board-now { position: absolute; top: 0; bottom: 0; width: 2px; background: #4C9FD8; }
 
 /* The wall copy. This gets taped up backstage and read at arm's length. */

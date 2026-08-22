@@ -48,31 +48,44 @@
     the event window. Overlapping work is the point — a person on two blocks at
     once is flagged, not blocked.</p>
     <div class="board-scroll">
-      {% for lane in lanes %}
-        <div class="board-lane">
-          <span class="board-lane-label">{{ lane.track }}</span>
-          <div class="board-track">
-            {% if now_pct is not none %}
-              <span class="board-now" style="left: {{ now_pct }}%"></span>
-            {% endif %}
-            {% for block in lane.blocks %}
-              {% set seg = block.segment %}
-              <div class="board-block kind-{{ seg.kind }}"
-                   style="left: {{ block.left_pct }}%; width: {{ block.width_pct }}%"
-                   title="{{ seg.title }} — {{ seg.start[11:] }} to {{ seg.end[11:] }}">
-                <span class="board-block-title">{{ seg.title }}</span>
-                {% for owner_id in seg.owner_ids %}
-                  {% set person = staff_by_id.get(owner_id) %}
-                  {% if person %}
-                    <span class="owner-chip{% if flags.get(seg.id, {}).get(owner_id) %} owner-clash{% endif %}">
-                      {{ person.display_name }}</span>
-                  {% endif %}
-                {% endfor %}
-              </div>
-            {% endfor %}
-          </div>
+      <div class="board-inner" style="width: {{ board_px }}px">
+        <div class="board-ticks">
+          {% for tick in ticks %}
+            <span class="board-tick{% if tick.is_day_start %} is-day{% endif %}"
+                  style="left: {{ tick.left_px }}px">
+              <span class="board-tick-label">{{ tick.label }}</span>
+              {% if tick.is_day_start %}
+                <span class="board-tick-date">{{ tick.date_label }}</span>
+              {% endif %}
+            </span>
+          {% endfor %}
         </div>
-      {% endfor %}
+        {% for lane in lanes %}
+          <div class="board-lane">
+            <span class="board-lane-label">{{ lane.track }}</span>
+            <div class="board-track">
+              {% for tick in ticks %}
+                <span class="board-gridline{% if tick.is_day_start %} is-day{% endif %}"
+                      style="left: {{ tick.left_px }}px"></span>
+              {% endfor %}
+              {% if now_pct is not none %}
+                <span class="board-now" style="left: {{ now_pct }}%"></span>
+              {% endif %}
+              {% for block in lane.blocks %}
+                {% set seg = block.segment %}
+                <div class="board-block kind-{{ seg.kind }}{% if block.has_conflict %} owner-clash-block{% endif %}"
+                     style="left: {{ block.left_px }}px; width: {{ block.width_px }}px"
+                     title="{{ seg.title }} — {{ seg.start[11:] }} to {{ seg.end[11:] }}{% if block.conflict_detail %} — shared owner: {{ block.conflict_detail }}{% endif %}">
+                  <span class="board-block-title">{{ seg.title }}</span>
+                  {% if block.show_conflict_label %}
+                    <span class="clash-note">&#9888; shared owner</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
     </div>
 
   {% else %}

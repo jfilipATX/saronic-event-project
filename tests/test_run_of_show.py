@@ -236,7 +236,7 @@ class TestMidnightSpanning:
                             parse_window("2026-03-14T06:00", "2026-03-16T20:00"))
         blocks = [b for lane in lanes for b in lane["blocks"]]
         assert len(blocks) == 1
-        assert blocks[0]["width_pct"] > 0
+        assert blocks[0]["width_px"] > 0
 
     def test_the_day_view_marks_it_as_continuing(self, conn, event):
         repo.add_segment(conn, _seg(event, "Overnight build",
@@ -276,9 +276,15 @@ class TestBoardGeometry:
                                     "2026-03-14T17:00"))
         lane = board_lanes(repo.list_segments(conn, event),
                            parse_window("2026-03-14T06:00", "2026-03-16T20:00"))[0]
+        # Fixed zoom: a block sits inside the BOARD's own width, which is a
+        # function of the window length, not of the viewport.
+        from app.features.run_of_show import board_width_px
+
         block = lane["blocks"][0]
-        assert 0 <= block["left_pct"] <= 100
-        assert block["left_pct"] + block["width_pct"] <= 100.01
+        total = board_width_px(parse_window("2026-03-14T06:00",
+                                            "2026-03-16T20:00"))
+        assert block["left_px"] >= 0
+        assert block["left_px"] + block["width_px"] <= total
 
     def test_an_unscheduled_event_yields_no_board(self, conn):
         eid = repo.create_event(conn, Event(name="Undated", city="Austin"))
@@ -503,3 +509,139 @@ class TestRunOfShowUi:
                       "2026-03-14T17:00")
         page = client.get(f"/events/{eid}/run-of-show").text
         assert "no-print" in page
+
+
+class TestBoardIsFixedZoom:
+    """Design QA found the board auto-compressing the window to fit the screen.
+
+    Percentage widths ARE auto-compression: a 38-hour event squeezed into ~750px
+    gave 40-60px blocks with clipped titles. The spec rules that out — a
+    readable 4-hour window beats an unreadable 3-day overview — so geometry is
+    now fixed pixels per 15-minute column and the board scrolls horizontally.
+    """
+
+    def test_positions_are_pixels_not_percentages(self, conn, event):
+        repo.add_segment(conn, _seg(event, "Doors", "2026-03-14T09:00",
+                                    "2026-03-14T17:00"))
+        block = board_lanes(repo.list_segments(conn, event),
+                            parse_window("2026-03-14T06:00",
+                                         "2026-03-16T20:00"))[0]["blocks"][0]
+        assert "left_px" in block and "width_px" in block
+
+    def test_the_scale_is_independent_of_the_window_length(self, conn, event):
+        """The same 8-hour segment must be the same width on a 1-day and a
+        3-day event. Under percentages it was three times narrower."""
+        repo.add_segment(conn, _seg(event, "Doors", "2026-03-14T09:00",
+                                    "2026-03-14T17:00"))
+        segments = repo.list_segments(conn, event)
+        short = board_lanes(segments, parse_window("2026-03-14T06:00",
+                                                   "2026-03-14T20:00"))
+        long = board_lanes(segments, parse_window("2026-03-14T06:00",
+                                                  "2026-03-16T20:00"))
+        assert (short[0]["blocks"][0]["width_px"]
+                == long[0]["blocks"][0]["width_px"])
+
+    def test_an_hour_is_the_declared_scale(self, conn, event):
+        from app.features.run_of_show import PX_PER_HOUR
+
+        repo.add_segment(conn, _seg(event, "One hour", "2026-03-14T09:00",
+                                    "2026-03-14T10:00"))
+        block = board_lanes(repo.list_segments(conn, event),
+                            parse_window("2026-03-14T06:00",
+                                         "2026-03-16T20:00"))[0]["blocks"][0]
+        assert block["width_px"] == PX_PER_HOUR
+
+    def test_a_short_segment_keeps_a_readable_minimum(self, conn, event):
+        from app.features.run_of_show import MIN_BLOCK_PX
+
+        repo.add_segment(conn, _seg(event, "Quick", "2026-03-14T09:00",
+                                    "2026-03-14T09:15"))
+        block = board_lanes(repo.list_segments(conn, event),
+                            parse_window("2026-03-14T06:00",
+                                         "2026-03-16T20:00"))[0]["blocks"][0]
+        assert block["width_px"] >= MIN_BLOCK_PX
+
+    def test_the_board_reports_its_total_width(self, conn, event):
+        repo.add_segment(conn, _seg(event, "Doors", "2026-03-14T09:00",
+                                    "2026-03-14T17:00"))
+        from app.features.run_of_show import board_width_px
+
+        window = parse_window("2026-03-14T06:00", "2026-03-16T20:00")
+        assert board_width_px(window) > 3000  # 38h at 96px/h scrolls
+
+
+class TestHourTicks:
+    """No time axis meant a block's position was uninterpretable."""
+
+    def test_ticks_cover_the_window(self, conn, event):
+        from app.features.run_of_show import hour_ticks
+
+        ticks = hour_ticks(parse_window("2026-03-14T06:00", "2026-03-14T10:00"))
+        assert [t["label"] for t in ticks] == ["06:00", "07:00", "08:00",
+                                               "09:00", "10:00"]
+
+    def test_ticks_are_positioned_in_pixels(self, conn, event):
+        from app.features.run_of_show import PX_PER_HOUR, hour_ticks
+
+        ticks = hour_ticks(parse_window("2026-03-14T06:00", "2026-03-14T10:00"))
+        assert ticks[0]["left_px"] == 0
+        assert ticks[1]["left_px"] == PX_PER_HOUR
+
+    def test_a_day_boundary_is_marked(self, conn, event):
+        from app.features.run_of_show import hour_ticks
+
+        ticks = hour_ticks(parse_window("2026-03-14T22:00", "2026-03-15T02:00"))
+        boundaries = [t for t in ticks if t["is_day_start"]]
+        assert len(boundaries) == 1
+        assert boundaries[0]["date_label"] == "2026-03-15"
+
+    def test_an_unscheduled_event_has_no_ticks(self):
+        from app.features.schedule import EventWindow
+        from app.features.run_of_show import hour_ticks
+
+        assert hour_ticks(EventWindow()) == []
+
+
+class TestBoardCarriesTheConflictFlag:
+    """The board exists to expose overlaps; it must show them itself."""
+
+    def test_a_conflicted_block_is_marked(self, conn, event, staff):
+        dana = staff["Dana Reyes"]
+        repo.add_segment(conn, _seg(event, "Booth", "2026-03-14T09:00",
+                                    "2026-03-14T17:00", owners=[dana]))
+        repo.add_segment(conn, _seg(event, "VIP tour", "2026-03-14T14:00",
+                                    "2026-03-14T15:00", kind="vip", owners=[dana]))
+        segments = repo.list_segments(conn, event)
+        lanes = board_lanes(segments, parse_window("2026-03-14T06:00",
+                                                   "2026-03-16T20:00"),
+                            flags=conflicts_for(segments))
+        blocks = [b for lane in lanes for b in lane["blocks"]]
+        assert all(b["has_conflict"] for b in blocks)
+
+    def test_a_clean_block_is_not_marked(self, conn, event, staff):
+        repo.add_segment(conn, _seg(event, "Booth", "2026-03-14T09:00",
+                                    "2026-03-14T12:00",
+                                    owners=[staff["Dana Reyes"]]))
+        segments = repo.list_segments(conn, event)
+        lanes = board_lanes(segments, parse_window("2026-03-14T06:00",
+                                                   "2026-03-16T20:00"),
+                            flags=conflicts_for(segments))
+        assert not lanes[0]["blocks"][0]["has_conflict"]
+
+    def test_the_flag_survives_a_narrow_block(self, conn, event, staff):
+        """A 15-minute overlap is still a conflict — the outline must not
+        depend on the block being wide enough for a label."""
+        dana = staff["Dana Reyes"]
+        repo.add_segment(conn, _seg(event, "Booth", "2026-03-14T09:00",
+                                    "2026-03-14T17:00", owners=[dana]))
+        repo.add_segment(conn, _seg(event, "Quick sync", "2026-03-14T14:00",
+                                    "2026-03-14T14:15", kind="program",
+                                    owners=[dana]))
+        segments = repo.list_segments(conn, event)
+        lanes = board_lanes(segments, parse_window("2026-03-14T06:00",
+                                                   "2026-03-16T20:00"),
+                            flags=conflicts_for(segments))
+        narrow = [b for lane in lanes for b in lane["blocks"]
+                  if b["segment"].title == "Quick sync"][0]
+        assert narrow["has_conflict"]
+        assert narrow["show_conflict_label"] is False  # too narrow for text
