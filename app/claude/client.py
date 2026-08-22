@@ -151,8 +151,7 @@ class RealClaudeClient(ClaudeClient):
                 raise EmptyResponseError(stop_reason=stop, block_types=kinds)
             return text
 
-    @staticmethod
-    def _map_error(exc: Exception) -> ClaudeError:
+    def _map_error(self, exc: Exception) -> ClaudeError:
         etype = type(exc).__name__
         status = getattr(exc, "status_code", None)
         if status == 401:
@@ -162,7 +161,10 @@ class RealClaudeClient(ClaudeClient):
             retry_after = getattr(retry_after, "headers", {}).get("retry-after") if retry_after else None
             return RateLimitError(retry_after=float(retry_after) if retry_after else None)
         if status == 404:
-            return ModelUnavailableError(os.environ.get("ANTHROPIC_MODEL", "?"))
+            # The client's own config, never the environment: a model set
+            # programmatically would otherwise be reported as "?" on the one
+            # path where knowing it matters.
+            return ModelUnavailableError(self._config.anthropic_model)
         # Heuristic fallbacks.
         if "api_key" in str(exc).lower() or "authentication" in str(exc).lower():
             return ExpiredKeyError()

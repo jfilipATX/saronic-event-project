@@ -19,7 +19,12 @@ CREATE TABLE IF NOT EXISTS attendees (
     checkin_code    TEXT,
     attended_at     TEXT,
     self_reported   INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    withdrawn_at    TEXT,
+    erased_at       TEXT,
+    title           TEXT,
+    company         TEXT,
+    is_vip          INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS event_variables (
@@ -39,6 +44,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     question      TEXT NOT NULL,
     options_json  TEXT NOT NULL,
     chosen_key    TEXT,
+    chosen_value  TEXT,
     decided_by    TEXT,
     decided_at    TEXT,
     note          TEXT,
@@ -48,4 +54,34 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_event ON decisions(event_id, id);
+
+-- P2-3: venue favourites and used-before history, keyed on a stable venue_ref
+-- rather than the display name so a rename does not orphan the record.
+CREATE TABLE IF NOT EXISTS venue_favourites (
+    venue_ref  TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS venue_uses (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    venue_ref  TEXT NOT NULL,
+    event_id   INTEGER,
+    event_name TEXT NOT NULL,
+    used_on    TEXT,
+    notes      TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS vip_alerts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER NOT NULL,
+    attendee_id   INTEGER,
+    attendee_name TEXT NOT NULL,
+    company       TEXT,
+    arrived_at    TEXT,
+    delivered     INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_venue_uses_ref ON venue_uses(venue_ref, used_on);
 """

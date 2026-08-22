@@ -10,9 +10,11 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Iterator, List, Optional
+from typing import Dict, Iterator, List, Optional
 
-from app.db.models import Attendee, Decision, DecisionOption, Event, EventVariable
+from app.db.models import (
+    Attendee, Decision, DecisionOption, Event, EventVariable, VenueUse, VipAlert,
+)
 from app.db import schema_sql_text as _sql
 
 
@@ -54,9 +56,10 @@ def list_events(conn: sqlite3.Connection) -> List[Event]:
 def add_attendee(conn: sqlite3.Connection, attendee: Attendee) -> int:
     cur = conn.execute(
         "INSERT INTO attendees (event_id, full_name, email, checkin_code, "
-        "self_reported) VALUES (?,?,?,?,?)",
+        "self_reported, title, company, is_vip) VALUES (?,?,?,?,?,?,?,?)",
         (attendee.event_id, attendee.full_name, attendee.email,
-         attendee.checkin_code, int(bool(attendee.self_reported))),
+         attendee.checkin_code, int(bool(attendee.self_reported)),
+         attendee.title, attendee.company, int(bool(attendee.is_vip))),
     )
     return int(cur.lastrowid)
 
@@ -71,6 +74,7 @@ def _row_to_attendee(row: sqlite3.Row) -> Attendee:
     """
     data = dict(row)
     data["self_reported"] = bool(data.get("self_reported", 0))
+    data["is_vip"] = bool(data.get("is_vip", 0))
     return Attendee(**data)
 
 
@@ -88,13 +92,64 @@ def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str) -> None
     )
 
 
-def list_attendees(conn: sqlite3.Connection, event_id: int) -> List[Attendee]:
-    return [
-        _row_to_attendee(r)
-        for r in conn.execute(
-            "SELECT * FROM attendees WHERE event_id=?", (event_id,)
-        ).fetchall()
-    ]
+def list_attendees(conn: sqlite3.Connection, event_id: int,
+                   include_withdrawn: bool = False) -> List[Attendee]:
+    """The active roster by default.
+
+    Withdrawn and erased people are excluded unless asked for: a coordinator
+    counting badges wants who is actually coming, and silently including
+    cancellations inflates every number downstream.
+    """
+    sql_text = "SELECT * FROM attendees WHERE event_id=?"
+    if not include_withdrawn:
+        sql_text += " AND withdrawn_at IS NULL AND erased_at IS NULL"
+    return [_row_to_attendee(r)
+            for r in conn.execute(sql_text, (event_id,)).fetchall()]
+
+
+def get_attendee(conn: sqlite3.Connection, attendee_id: int) -> Optional[Attendee]:
+    row = conn.execute("SELECT * FROM attendees WHERE id=?", (attendee_id,)).fetchone()
+    return _row_to_attendee(row) if row else None
+
+
+def withdraw_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    """Cancel an invitee. Reversible, and the name is deliberately kept."""
+    conn.execute(
+        "UPDATE attendees SET withdrawn_at=datetime('now') "
+        "WHERE id=? AND withdrawn_at IS NULL AND erased_at IS NULL",
+        (attendee_id,),
+    )
+
+
+def reinstate_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    person = get_attendee(conn, attendee_id)
+    if person is not None and person.is_erased:
+        raise ValueError(
+            f"Attendee {attendee_id} was erased; erasure is irreversible by "
+            "design and the personal details no longer exist."
+        )
+    conn.execute("UPDATE attendees SET withdrawn_at=NULL WHERE id=?", (attendee_id,))
+
+
+#: What an erased row shows instead of a name. Explicit rather than blank so an
+#: erasure is self-evident: a blank name could be a data bug, and a coordinator
+#: seeing an empty row would reasonably try to "fix" it.
+ERASED_PLACEHOLDER = "(erased at the attendee's request)"
+
+
+def erase_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    """Destroy an attendee's personal data in place. Irreversible.
+
+    Attendance is kept as an anonymous tally — deleting the row would corrupt
+    the count of who was actually in the building, which is a safety record at a
+    defense event, not a marketing metric. The check-in code goes too: a
+    credential tied to a person is personal data.
+    """
+    conn.execute(
+        "UPDATE attendees SET full_name=?, email=NULL, checkin_code=NULL, "
+        "erased_at=COALESCE(erased_at, datetime('now')) WHERE id=?",
+        (ERASED_PLACEHOLDER, attendee_id),
+    )
 
 
 def add_variable(conn: sqlite3.Connection, var: EventVariable) -> int:
@@ -123,8 +178,8 @@ def list_variables(conn: sqlite3.Connection, event_id: int) -> List[EventVariabl
 # ─────────────────────────────────────────────────────────────────────────────
 
 _DECISION_COLUMNS = (
-    "id, event_id, step, question, options_json, chosen_key, decided_by, "
-    "decided_at, note, superseded_by, blocked_reason"
+    "id, event_id, step, question, options_json, chosen_key, chosen_value, "
+    "decided_by, decided_at, note, superseded_by, blocked_reason"
 )
 
 #: Columns added after the first release, as (table, column, DDL type). The schema
@@ -133,7 +188,17 @@ _DECISION_COLUMNS = (
 #: query naming them would fail. Applied idempotently on every init_db().
 _ADDED_COLUMNS = (
     ("decisions", "blocked_reason", "TEXT"),
+    ("decisions", "chosen_value", "TEXT"),
+    ("attendees", "withdrawn_at", "TEXT"),
+    ("attendees", "erased_at", "TEXT"),
+    ("attendees", "title", "TEXT"),
+    ("attendees", "company", "TEXT"),
+    ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+#: Tables added after the first release. CREATE TABLE IF NOT EXISTS in SCHEMA
+#: already handles these on open, listed here for the record.
+_ADDED_TABLES = ("venue_favourites", "venue_uses", "vip_alerts")
 
 
 def apply_migrations(conn: sqlite3.Connection) -> list[str]:
@@ -182,12 +247,26 @@ def _row_to_decision(row: sqlite3.Row) -> Decision:
         question=row["question"],
         options=_load_options(row["options_json"]),
         chosen_key=row["chosen_key"],
+        chosen_value=row["chosen_value"],
         decided_by=row["decided_by"],
         decided_at=row["decided_at"],
         note=row["note"],
         superseded_by=row["superseded_by"],
         blocked_reason=row["blocked_reason"],
     )
+
+
+def _resolved_value(decision: Decision) -> Optional[str]:
+    """The value to persist for the chosen option.
+
+    Only options that declare ``data["requires_value"]`` may carry one. A stray
+    value on a preset option is dropped rather than stored, so the audit trail
+    cannot accumulate values that never influenced anything.
+    """
+    chosen = decision.chosen_option
+    if chosen is None or not chosen.data.get("requires_value"):
+        return None
+    return decision.chosen_value
 
 
 def _validate(decision: Decision) -> None:
@@ -214,13 +293,15 @@ def record_decision(conn: sqlite3.Connection, decision: Decision) -> int:
         decided_at = _now()
     cur = conn.execute(
         "INSERT INTO decisions (event_id, step, question, options_json, chosen_key, "
-        "decided_by, decided_at, note, blocked_reason) VALUES (?,?,?,?,?,?,?,?,?)",
+        "chosen_value, decided_by, decided_at, note, blocked_reason) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
             decision.event_id,
             decision.step,
             decision.question,
             _dump_options(decision.options),
             decision.chosen_key,
+            _resolved_value(decision),
             decision.decided_by,
             decided_at,
             decision.note,
@@ -245,6 +326,7 @@ def revise_decision(
     note: Optional[str] = None,
     decided_by: Optional[str] = None,
     options: Optional[List[DecisionOption]] = None,
+    chosen_value: Optional[str] = None,
 ) -> int:
     """Supersede ``decision_id`` with a new row carrying the revised choice.
 
@@ -266,6 +348,7 @@ def revise_decision(
         question=original.question,
         options=options if options is not None else original.options,
         chosen_key=chosen_key if chosen_key is not None else original.chosen_key,
+        chosen_value=chosen_value if chosen_value is not None else original.chosen_value,
         decided_by=decided_by if decided_by is not None else original.decided_by,
         note=note,
     )
@@ -291,3 +374,95 @@ def decision_history(conn: sqlite3.Connection, event_id: int) -> List[Decision]:
         (event_id,),
     ).fetchall()
     return [_row_to_decision(r) for r in rows]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2-3 — venue favourites and used-before history
+#
+# Both key on a stable ``venue_ref``, never the display name: a rebranded venue
+# must keep its history, and two venues sharing a name in different cities must
+# never merge.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def set_favourite(conn: sqlite3.Connection, venue_ref: str, on: bool = True) -> None:
+    if on:
+        conn.execute(
+            "INSERT OR IGNORE INTO venue_favourites (venue_ref) VALUES (?)",
+            (venue_ref,),
+        )
+    else:
+        conn.execute("DELETE FROM venue_favourites WHERE venue_ref=?", (venue_ref,))
+
+
+def favourites(conn: sqlite3.Connection) -> set:
+    return {r["venue_ref"] for r in conn.execute(
+        "SELECT venue_ref FROM venue_favourites")}
+
+
+def record_venue_use(conn: sqlite3.Connection, use: VenueUse) -> int:
+    cur = conn.execute(
+        "INSERT INTO venue_uses (venue_ref, event_id, event_name, used_on, notes) "
+        "VALUES (?,?,?,?,?)",
+        (use.venue_ref, use.event_id, use.event_name, use.used_on, use.notes),
+    )
+    return int(cur.lastrowid)
+
+
+def venue_uses(conn: sqlite3.Connection) -> Dict[str, List[VenueUse]]:
+    """All recorded uses grouped by venue_ref, most recent first within each."""
+    rows = conn.execute(
+        "SELECT id, venue_ref, event_id, event_name, used_on, notes FROM venue_uses "
+        "ORDER BY COALESCE(used_on, '') DESC, id DESC"
+    ).fetchall()
+    grouped: Dict[str, List[VenueUse]] = {}
+    for r in rows:
+        grouped.setdefault(r["venue_ref"], []).append(VenueUse(**dict(r)))
+    return grouped
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2-5 — VIP arrival alerts
+#
+# Recorded, not sent. Until SMTP is configured, logging what WOULD be sent is
+# the honest option: marking these delivered would have the coordinator believe
+# a notification went out when none did.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def record_vip_alert(conn: sqlite3.Connection, alert: VipAlert) -> int:
+    cur = conn.execute(
+        "INSERT INTO vip_alerts (event_id, attendee_id, attendee_name, company, "
+        "arrived_at, delivered) VALUES (?,?,?,?,?,?)",
+        (alert.event_id, alert.attendee_id, alert.attendee_name, alert.company,
+         alert.arrived_at, int(bool(alert.delivered))),
+    )
+    return int(cur.lastrowid)
+
+
+def vip_alerts(conn: sqlite3.Connection, event_id: int) -> List[VipAlert]:
+    rows = conn.execute(
+        "SELECT id, event_id, attendee_id, attendee_name, company, arrived_at, "
+        "delivered FROM vip_alerts WHERE event_id=? ORDER BY id", (event_id,)
+    ).fetchall()
+    out = []
+    for r in rows:
+        data = dict(r)
+        data["delivered"] = bool(data["delivered"])
+        out.append(VipAlert(**data))
+    return out
+
+
+def get_attendee_by_email(conn: sqlite3.Connection, event_id: int,
+                          email: str) -> Optional[Attendee]:
+    """Find an invitee by email within one event.
+
+    Erased people have no email, so they are structurally unfindable here —
+    which is the correct outcome of an erasure request.
+    """
+    row = conn.execute(
+        "SELECT * FROM attendees WHERE event_id=? AND email IS NOT NULL "
+        "AND lower(email)=lower(?) AND erased_at IS NULL",
+        (event_id, email.strip()),
+    ).fetchone()
+    return _row_to_attendee(row) if row else None

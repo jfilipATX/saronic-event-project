@@ -30,6 +30,29 @@ class Attendee:
     attended_at: Optional[str] = None
     self_reported: bool = False
     created_at: Optional[str] = None
+    #: Roster detail (P2-5). Optional: a walk-in may supply them, a QR invite
+    #: may not.
+    title: Optional[str] = None
+    company: Optional[str] = None
+    #: VIP flag — surfaced at the desk and alerted on, never used to rank.
+    is_vip: bool = False
+    #: Cancelled invitee. Reversible; the name is deliberately kept.
+    withdrawn_at: Optional[str] = None
+    #: PII erasure. Irreversible; name/email/code are destroyed in place while
+    #: attendance survives as an anonymous tally.
+    erased_at: Optional[str] = None
+
+    @property
+    def is_withdrawn(self) -> bool:
+        return self.withdrawn_at is not None
+
+    @property
+    def is_erased(self) -> bool:
+        return self.erased_at is not None
+
+    @property
+    def on_roster(self) -> bool:
+        return not self.is_withdrawn and not self.is_erased
 
 
 @dataclass
@@ -38,6 +61,41 @@ class EventVariable:
     event_id: int = 0
     kind: str = ""
     value: str = ""
+    notes: Optional[str] = None
+
+
+@dataclass
+class VipAlert:
+    """A VIP arrival the coordinator should know about (P2-5).
+
+    ``delivered`` stays False until real email is configured: logging what WOULD
+    be sent is honest, whereas recording it as sent would have the coordinator
+    believe a notification went out when none did.
+    """
+
+    id: Optional[int] = None
+    event_id: int = 0
+    attendee_id: Optional[int] = None
+    attendee_name: str = ""
+    company: Optional[str] = None
+    arrived_at: Optional[str] = None
+    delivered: bool = False
+
+
+@dataclass
+class VenueUse:
+    """A record that a venue hosted one of our events (P2-3).
+
+    Keyed on ``venue_ref`` (a stable id) rather than the display name, so a
+    renamed venue keeps its history and two venues sharing a name in different
+    cities never merge.
+    """
+
+    id: Optional[int] = None
+    venue_ref: str = ""
+    event_id: Optional[int] = None
+    event_name: str = ""
+    used_on: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -77,6 +135,10 @@ class Decision:
     question: str = ""
     options: List[DecisionOption] = field(default_factory=list)
     chosen_key: Optional[str] = None
+    #: Coordinator-supplied value for an option that asks for one (data.requires_value).
+    #: The chosen_key guard stays intact — the option WAS offered — while the number
+    #: or text the human typed rides here.
+    chosen_value: Optional[str] = None
     decided_by: Optional[str] = None
     decided_at: Optional[str] = None
     note: Optional[str] = None
@@ -105,3 +167,24 @@ class Decision:
     def alternatives(self) -> List[DecisionOption]:
         """Roads not taken — preserved so the human can revisit the trade-off."""
         return [o for o in self.options if o.key != self.chosen_key]
+
+    @property
+    def display_label(self) -> str:
+        """Label as the coordinator should see it, everywhere.
+
+        A supplied value must read identically to a preset one in the playbook,
+        the deck and the history — the audit trail should not betray whether the
+        number was offered or typed.
+        """
+        chosen = self.chosen_option
+        if chosen is None:
+            return ""
+        if not self.chosen_value:
+            return chosen.label
+        template = chosen.data.get("value_label")
+        if template:
+            try:
+                return template.format(value=int(self.chosen_value))
+            except (ValueError, TypeError, KeyError):
+                return template.replace("{value:,}", self.chosen_value)
+        return f"{chosen.label}: {self.chosen_value}"

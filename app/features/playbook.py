@@ -49,6 +49,25 @@ def _title_for(step: str) -> str:
     return STEP_TITLES.get(step, step.replace("_", " ").capitalize())
 
 
+#: Decision fields that affect what the coordinator SEES. Any new one must be
+#: added here AND threaded through the view models below.
+#:
+#: This list exists because three features in a row shipped a consumer that
+#: silently dropped a field — the document was wrong while the tests were green.
+#: A reflective test asserts these stay in sync, so the next person to add a
+#: presentation field gets a failure instead of a quiet omission.
+PRESENTATION_FIELDS: tuple[str, ...] = (
+    "question",
+    "options",
+    "chosen_key",
+    "chosen_value",
+    "decided_by",
+    "decided_at",
+    "note",
+    "blocked_reason",
+)
+
+
 @dataclass
 class PlaybookSection:
     """One settled decision, rendered for the human."""
@@ -64,6 +83,27 @@ class PlaybookSection:
     decided_at: Optional[str] = None
     note: Optional[str] = None
 
+    @classmethod
+    def from_decision(cls, decision, title: str) -> "PlaybookSection":
+        """The ONE way a settled decision becomes a section.
+
+        Uses ``display_label`` so a coordinator-supplied value reads identically
+        to a preset one wherever a section is rendered.
+        """
+        chosen = decision.chosen_option
+        return cls(
+            step=decision.step,
+            title=title,
+            question=decision.question,
+            chosen_key=chosen.key,
+            chosen_label=decision.display_label or chosen.label,
+            reasoning=chosen.reasoning,
+            alternatives=decision.alternatives,
+            decided_by=decision.decided_by,
+            decided_at=decision.decided_at,
+            note=decision.note,
+        )
+
 
 @dataclass
 class OpenQuestion:
@@ -74,6 +114,17 @@ class OpenQuestion:
     question: str
     options: List[DecisionOption] = field(default_factory=list)
     blocked_reason: str = ""
+
+    @classmethod
+    def from_decision(cls, decision, title: str) -> "OpenQuestion":
+        """The ONE way an unanswered decision becomes an open question."""
+        return cls(
+            step=decision.step,
+            title=title,
+            question=decision.question,
+            options=decision.options,
+            blocked_reason=getattr(decision, "blocked_reason", "") or "",
+        )
 
 
 @dataclass
@@ -110,41 +161,13 @@ def compose_playbook(conn, event_id: int) -> Playbook:
     sections: List[PlaybookSection] = []
     open_questions: List[OpenQuestion] = []
     for d in ordered:
-        if d.is_pending:
-            open_questions.append(
-                OpenQuestion(
-                    step=d.step,
-                    title=_title_for(d.step),
-                    question=d.question,
-                    options=d.options,
-                    blocked_reason=getattr(d, "blocked_reason", "") or "",
-                )
-            )
+        title = _title_for(d.step)
+        # Defensive on chosen_option: repository validation guarantees it, but a
+        # hand-edited database should degrade to a visible gap, not a crash.
+        if d.is_pending or d.chosen_option is None:
+            open_questions.append(OpenQuestion.from_decision(d, title))
             continue
-        chosen = d.chosen_option
-        # Defensive: repository validation guarantees this, but a hand-edited DB
-        # should degrade to a visible gap rather than a crash.
-        if chosen is None:
-            open_questions.append(
-                OpenQuestion(step=d.step, title=_title_for(d.step),
-                             question=d.question, options=d.options,
-                             blocked_reason=getattr(d, "blocked_reason", "") or "")
-            )
-            continue
-        sections.append(
-            PlaybookSection(
-                step=d.step,
-                title=_title_for(d.step),
-                question=d.question,
-                chosen_key=chosen.key,
-                chosen_label=chosen.label,
-                reasoning=chosen.reasoning,
-                alternatives=d.alternatives,
-                decided_by=d.decided_by,
-                decided_at=d.decided_at,
-                note=d.note,
-            )
-        )
+        sections.append(PlaybookSection.from_decision(d, title))
 
     return Playbook(
         event=event,

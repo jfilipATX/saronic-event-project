@@ -1,0 +1,65 @@
+<!-- scrape_confirm.html — proposed facts from an event URL, or a graceful
+     fallback to manual entry. Context: options, source_url, event_url, problem. -->
+{% extends "base.html" %}
+{% block title %}Confirm event details{% endblock %}
+{% block content %}
+  <p class="eyebrow">New event</p>
+  <h1>Confirm the details</h1>
+
+  {% if problem %}
+    <div class="pending-note">
+      <p>{{ problem }}</p>
+    </div>
+  {% endif %}
+
+  {% if options %}
+    <p class="muted">
+      These were read from <a class="link-accent" href="{{ source_url }}"
+      target="_blank" rel="noopener noreferrer">{{ source_url }}</a>.
+      Nothing has been saved yet — check each value and correct anything wrong.
+      A scraped date that looks right but isn't will follow the plan all the way
+      to the invitations.
+    </p>
+  {% endif %}
+
+  <form method="post" action="/events">
+    <input type="hidden" name="source_url" value="{{ source_url }}">
+    {# Carry the refused URL forward so creating anyway records WHY nothing was
+       imported, instead of the attempt vanishing silently. #}
+    {% if problem and not source_url %}
+      <input type="hidden" name="event_url" value="{{ event_url }}">
+    {% endif %}
+
+    <h2>Event</h2>
+    <div class="form-row">
+      <input class="input" type="text" name="name" placeholder="Event name" required
+             value="{{ (options | selectattr('key','equalto','event_name') | map(attribute='data.suggested') | first) or '' }}">
+      <input class="input" type="text" name="city" placeholder="City" required
+             value="{{ (options | selectattr('key','equalto','city') | map(attribute='data.suggested') | first) or '' }}">
+    </div>
+
+    {% set extra = options | rejectattr('key','equalto','event_name') | rejectattr('key','equalto','city') | list %}
+    {% if extra %}
+      <h2>Details found on the page</h2>
+      <ul class="option-list">
+        {% for option in extra %}
+          <li class="option-card">
+            <span class="option-label">{{ option.label }}</span>
+            <p class="option-reasoning">{{ option.reasoning }}</p>
+            <div class="form-row">
+              <input class="input" type="text" name="fact_{{ option.key }}"
+                     value="{{ option.data.suggested }}">
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <div class="option-actions mt-xl">
+      <button class="btn-primary" type="submit">
+        {% if options %}Confirm and create event{% else %}Create event{% endif %}
+      </button>
+      <a class="btn-quiet" href="/">Start over</a>
+    </div>
+  </form>
+{% endblock %}

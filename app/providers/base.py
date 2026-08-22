@@ -8,7 +8,7 @@ single config flag (PROVIDER_MODE / USE_REAL_CLAUDE) with no feature-code change
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Protocol, runtime_checkable
+from typing import List, Optional, Protocol, runtime_checkable
 
 
 @dataclass
@@ -18,6 +18,14 @@ class Venue:
     capacity: int
     rating: float
     notes: str = ""
+    #: Optional enrichment (P2-3). A provider supplies what it knows; the
+    #: presentation layer degrades gracefully for whatever is missing.
+    website: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    #: Stable identity for favourites/history. Defaults to a slug of the name +
+    #: city, but a provider may pin it so a RENAMED venue keeps its history.
+    venue_ref: Optional[str] = None
 
 
 @dataclass

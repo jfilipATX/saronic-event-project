@@ -15,13 +15,21 @@ from app.providers.base import (
 _MOCK_VENUES = {
     "austin": [
         Venue("Austin Convention Center", "Austin", 9000, 4.6,
-              "Downtown, 900k sqft exhibit hall."),
-        Venue("Palmer Events Center", "Austin", 3000, 4.4, "Lady Bird Lake views."),
-        Venue("Fairmont Austin", "Austin", 1800, 4.5, "Rooftop ballroom, hotel."),
+              "Downtown, 900k sqft exhibit hall.",
+              website="https://www.austinconventioncenter.com",
+              latitude=30.2639, longitude=-97.7397),
+        Venue("Palmer Events Center", "Austin", 3000, 4.4, "Lady Bird Lake views.",
+              website="https://www.palmereventscenter.com",
+              latitude=30.2578, longitude=-97.7545),
+        Venue("Fairmont Austin", "Austin", 1800, 4.5, "Rooftop ballroom, hotel.",
+              website="https://www.fairmont.com/austin",
+              latitude=30.2635, longitude=-97.7412),
     ],
     "san diego": [
         Venue("San Diego Convention Center", "San Diego", 7500, 4.7,
-              "Waterfront, bay view."),
+              "Waterfront, bay view.",
+              website="https://www.visitsandiego.com",
+              latitude=32.7061, longitude=-117.1624),
         Venue("Omni San Diego", "San Diego", 2200, 4.5, "Petco Park adjacent."),
     ],
 }

@@ -9,6 +9,20 @@ A decision-support tool for a **human event coordinator**: it researches options
 
 The coordinator walks a decision chain — **event type → audience estimate → venue → slides → check-in → playbook** — and at every step the tool presents a full slate of options with plain-language reasoning, records the human's choice, and carries it forward. The output is a playbook document that captures not just what was decided, but *why*, what was rejected, and what's still open.
 
+### Phase 2 additions
+
+- **Event URL import.** Paste a public event page URL at creation and Claude extracts dates, city, venue and other facts — presented as *proposals the coordinator confirms*, each attributed to its source host, never silently trusted. Extraction iterates a field allowlist, so an invented field can never reach the event record. Fetching is SSRF-guarded (private ranges, redirects re-validated per hop, size/timeout caps, fail-closed DNS); a refused URL is reported honestly on the first step page with a manual-entry path, never a silent no-op.
+- **Custom audience number.** The audience slate offers a `custom` option carrying the coordinator's own figure (e.g. a fixed invite list); it flows through venue-fit recalculation and revision-invalidation like any estimate, and the audit trail records it exactly as displayed.
+- **Venue enrichment.** Website and OpenStreetMap links per venue, favourites, and prior-use history ("Previously hosted Corsair Demo Day in 2025"). Favourites can break ties only *within* a fit band — enforced in the sort key, so a favourite can never outrank a better-fitting venue.
+- **Roster & check-in desk.** CSV roster import with auto-guessed column mapping, per-row skip reasons, duplicate-email dedup, and BOM/delimiter tolerance; check-in by email (a lookup, never a registration); four-field walk-ins; VIP flags with coordinator arrival alerts (honestly labelled "No email was sent: SMTP is not configured" until SMTP exists); and in-browser invite issuance minting signed QR credentials.
+- **Visual composer.** Four booth/kiosk slide variants composited from owned imagery (coordinator uploads primary, press-kit product and pure-ink fallbacks) — generative imagery deliberately excluded as a brand-fidelity risk on defense hardware. Text contrast is *computed* against the final composite (median-sampled, scrim deepens until 4.5:1), EXIF GPS is stripped on upload, and every render writes a source-attribution sidecar.
+
+### Data handling
+
+- **Two deletion semantics, deliberately distinct:** *withdraw* (cancelled invitee — leaves history, revokes door access on every check-in path) and *erase* (irreversible PII destruction — name, email and credential destroyed in place, attendance kept as an anonymous tally). Erasure is test-verified by grepping every table for the erased values, not just the obvious row.
+- A withdrawn credential scans as its own steel-coloured administrative state — deliberately not "tampered", because a cancelled guest is an admin conversation, not a security incident.
+- Invitees added via the invite form need only name + email (they're known people); door walk-ins require name, email, title and company. The asymmetry is a decision, not an accident.
+
 ## Core design principles
 
 - **Stage, never choose.** Every step is written as a *pending* decision carrying its full option slate. Only an explicit human action sets a choice — the tool structurally cannot advance the plan on its own (`record_decision` rejects any key that was never offered).
@@ -22,7 +36,7 @@ The coordinator walks a decision chain — **event type → audience estimate �
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env && chmod 600 .env
-.venv/bin/python -m pytest tests/ -q        # 235 tests, all offline
+.venv/bin/python -m pytest tests/ -q        # 567 tests, all offline
 .venv/bin/uvicorn app.main:create_app --factory
 ```
 
@@ -86,10 +100,10 @@ Every route translates to `CoordinatorWorkflow`, so the UI cannot drift from sta
 
 ## Verification
 
-- **235 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
+- **567 tests**, all green, offline by default — including adversarial QR tests (forged ids, wrong-secret signatures, never-issued codes), provider fail-soft (network errors degrade, never crash), and guard-rail tests on the spend meter.
 - **Secret hygiene:** `scripts/audit_secrets.py` scans all tracked files *and full commit history* for key values (not names), wired as a pre-push hook. Verified in both directions — clean on the real repo, and a negative control with a staged key gets caught and blocked.
 - Evidence artifacts are tracked deliberately: [`generated/`](generated/) holds exported playbooks and the complete Claude pass transcripts.
 
 ## Design system
 
-[`DESIGN.md`](DESIGN.md) derives every token from the Saronic press kit — ink `#162029` sampled from the wordmark, monochrome brand behavior preserved (accent blue is product-UI-only), Archivo Expanded for the wordmark voice. Templates reference tokens only; `grep -rn 'style="' app/ui/templates/` returns zero hits.
+[`DESIGN.md`](DESIGN.md) derives every token from the Saronic press kit — ink `#162029` sampled from the wordmark, monochrome brand behavior preserved (accent blue is product-UI-only), Archivo Expanded for the wordmark voice (composites fall back to DejaVu with an honest "(fallback)" label until font files land in `assets/fonts/` — the loader picks them up with no code change). Templates reference tokens only; `grep -rn 'style="' app/ui/templates/` returns zero hits.

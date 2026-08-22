@@ -4,6 +4,15 @@
 {% extends "base.html" %}
 {% block title %}{{ decision.question }} — Saronic Event Tool{% endblock %}
 {% block content %}
+  {% if url_refused %}
+    <div class="pending-note">
+      <p><strong>That event URL could not be fetched.</strong>
+         <code>{{ url_refused.url }}</code></p>
+      <p class="muted">{{ url_refused.reason }}
+         Nothing was imported from it — enter the event details manually as you
+         work through the steps below.</p>
+    </div>
+  {% endif %}
   <p class="eyebrow">Step {{ step_index }} of {{ step_total }}</p>
   <h1>{{ decision.question }}</h1>
 

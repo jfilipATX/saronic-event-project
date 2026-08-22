@@ -16,18 +16,36 @@ import sqlite3
 from dataclasses import dataclass
 from typing import List, Optional
 
-from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import (
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Attendee
+from app.db.models import Attendee, EventVariable
 from app.features.deck import build_deck, render_deck_markdown
+from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
+from app.features.visuals import VisualRequest, render_all, strip_exif
+from app.features.roster_import import (
+    MAPPABLE_FIELDS,
+    apply_roster,
+    preview_csv,
+)
+from app.features.url_fetch import fetch_url
+from app.features.url_guard import UnsafeUrlError, assert_fetchable
 from app.features.qr_checkin import (
     STATE_ALREADY,
+    STATE_VALID,
+    check_in_by_email,
+    issue_invitation,
+    register_walk_in,
     STATE_TAMPERED,
     STATE_VALID,
     check_in,
@@ -41,11 +59,25 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 #: Stepper labels for the nav. Chain steps first, then the derived views.
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("slides", "Slides"), ("checkin", "Check-in"), ("playbook", "Playbook")]
+    + [("slides", "Slides"), ("visuals", "Visuals"), ("invites", "Invitations"),
+       ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
 
 #: Set by create_app so helpers/tests can reach the active database.
 CURRENT_DB = "events.db"
+
+
+def _scrape_client():
+    """Claude client for URL extraction, or None when real Claude is off.
+
+    A separate seam from the deck's client so tests can stub extraction without
+    touching slide copy, and so mock mode never fabricates event facts.
+    """
+    from app.claude.client import get_client
+    from app.config import load_config
+
+    cfg = load_config()
+    return get_client(cfg) if cfg.claude_enabled else None
 
 
 def _signing_secret() -> str:
@@ -148,7 +180,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
-            elif key in ("slides", "checkin"):
+            elif key in ("slides", "checkin", "invites"):
                 state = "active" if current == key else "todo"
                 url = f"/events/{event_id}/{key}"
             else:
@@ -165,6 +197,78 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             steps.append(NavStep(key=key, label=label, url=url, state=state))
         return steps
 
+    # ── CSV roster import (P2-5) ─────────────────────────────────────────────
+
+    @app.get("/events/{event_id}/roster", response_class=HTMLResponse)
+    def roster_form(request: Request, event_id: int):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            attendees = repo.list_attendees(conn, event_id)
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": attendees,
+                "preview": None,
+                "outcome": None,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/roster/preview", response_class=HTMLResponse)
+    async def roster_preview(request: Request, event_id: int,
+                             roster: UploadFile = File(...)):
+        """Show what WOULD be imported. Writes nothing."""
+        raw = await roster.read()
+        text = raw.decode("utf-8", errors="replace")
+        preview = preview_csv(text)
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": repo.list_attendees(conn, event_id),
+                "preview": preview,
+                "csv_text": text,
+                "outcome": None,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/roster/import", response_class=HTMLResponse)
+    async def roster_commit(request: Request, event_id: int):
+        """Commit the import using the mapping the coordinator confirmed."""
+        form = await request.form()
+        text = form.get("csv_text") or ""
+        mapping = {
+            key[len("map_"):]: value
+            for key, value in form.items() if key.startswith("map_")
+        }
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                outcome = apply_roster(conn, event_id, text, mapping)
+                conn.commit()
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": repo.list_attendees(conn, event_id),
+                "preview": None,
+                "outcome": outcome,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
+
     # ── routes ───────────────────────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
@@ -179,11 +283,96 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             {"event": None, "steps": [], "events": events},
         )
 
+    @app.post("/events/scrape", response_class=HTMLResponse)
+    def scrape_event_url(request: Request, event_url: str = Form("")):
+        """Fetch a URL and PROPOSE facts. Creates nothing.
+
+        Every failure path renders the same page with the manual form intact, so
+        a refused or broken URL costs the coordinator a detour, never the flow.
+        """
+        problem = ""
+        options = []
+        source_url = ""
+        if not event_url.strip():
+            problem = "Enter an event URL, or fill in the details manually below."
+        else:
+            try:
+                result = fetch_url(event_url)
+            except UnsafeUrlError as exc:
+                result = None
+                problem = (
+                    f"{exc} Couldn't fetch this URL safely — enter the details "
+                    "manually below."
+                )
+            if result is not None:
+                if not result.ok:
+                    problem = result.error
+                else:
+                    source_url = result.final_url
+                    facts = extract_facts(_scrape_client(), result.text,
+                                          source_url=source_url)
+                    options = build_fact_options(facts)
+                    if not options:
+                        problem = (
+                            "Nothing could be extracted from that page. Enter the "
+                            "details manually below."
+                        )
+        return templates.TemplateResponse(request, "scrape_confirm.html", {
+            "event": None,
+            "steps": [],
+            "options": options,
+            "source_url": source_url,
+            "event_url": event_url,
+            "problem": problem,
+        })
+
     @app.post("/events")
-    def create_event(name: str = Form(...), city: str = Form(...)):
+    async def create_event(request: Request):
+        """Create an event from confirmed values.
+
+        Reads the form directly: the confirmable fact fields are dynamic
+        (``fact_<field>``), and only what the coordinator actually submitted is
+        stored — nothing carries over from the scrape implicitly.
+        """
+        form = await request.form()
+        name = (form.get("name") or "").strip()
+        city = (form.get("city") or "").strip()
+        if not name or not city:
+            raise HTTPException(status_code=400,
+                                detail="An event needs a name and a city.")
+
         conn = connect()
         try:
             event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
+            source_url = (form.get("source_url") or "").strip()
+            # A URL supplied here (rather than via /events/scrape) was never
+            # fetched. Silently dropping it is the worst answer: the coordinator
+            # reasonably believes the details were imported when nothing was. So
+            # record the refusal and surface it on the first step.
+            raw_url = (form.get("event_url") or "").strip()
+            if raw_url and not source_url:
+                try:
+                    assert_fetchable(raw_url)
+                    reason = "It was not fetched — enter the details manually."
+                except UnsafeUrlError as exc:
+                    reason = str(exc)
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind="url_refused", value=raw_url,
+                    notes=reason))
+            if source_url:
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind="source_url", value=source_url,
+                    notes="Event page the details were extracted from."))
+            for key, raw in form.items():
+                if not key.startswith("fact_"):
+                    continue
+                value = (raw or "").strip()
+                if not value:
+                    continue          # a blank field is a decision not to record it
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind=key[len("fact_"):], value=value,
+                    notes=f"Confirmed by the coordinator from {source_url}"
+                          if source_url else "Entered by the coordinator."))
             conn.commit()
         finally:
             conn.close()
@@ -207,6 +396,25 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                         else f"/events/{event_id}/steps/{target}")
                 return RedirectResponse(dest, status_code=303)
             index = CHAIN.index(step_key) + 1 if step_key in CHAIN else 1
+            # Favourites are live state, not part of the recorded decision. The
+            # stored options are a snapshot from when the step was staged, so a
+            # star toggled afterwards would otherwise never appear. Overlay the
+            # current set at render time — display only; the decision log is
+            # untouched.
+            # A URL refused at creation is reported once, on the first step —
+            # a note about creation, not a permanent banner.
+            url_refused = None
+            if step_key == CHAIN[0]:
+                for var in repo.list_variables(conn, event_id):
+                    if var.kind == "url_refused":
+                        url_refused = {"url": var.value, "reason": var.notes}
+                        break
+            if step_key == "venue":
+                favs = repo.favourites(conn)
+                for opt in decision.options:
+                    ref = opt.data.get("venue_ref")
+                    if ref:
+                        opt.data["favourite"] = ref in favs
             return templates.TemplateResponse(request, "step.html", {
                 "event": event,
                 "steps": nav_steps(conn, event_id, step_key),
@@ -216,19 +424,22 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "step_total": len(CHAIN),
                 "decision": decision,
                 "chosen_key": decision.chosen_key,
+                "chosen_value": decision.chosen_value,
+                "url_refused": url_refused,
                 "event_id": event_id,
             })
         finally:
             conn.close()
 
     @app.post("/events/{event_id}/decide")
-    def decide(event_id: int, step: str = Form(...), key: str = Form(...)):
+    def decide(event_id: int, step: str = Form(...), key: str = Form(...),
+               value: Optional[str] = Form(None)):
         conn = connect()
         try:
             load_event(conn, event_id)
             wf = CoordinatorWorkflow(conn)
             try:
-                wf.choose(event_id, step=step, key=key)
+                wf.choose(event_id, step=step, key=key, value=value)
             except ValueError as exc:
                 # An unoffered key is a bad request, not a server fault.
                 raise HTTPException(status_code=400, detail=str(exc))
@@ -275,6 +486,25 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return render_markdown(compose_playbook(conn, event_id))
         finally:
             conn.close()
+
+    # ── venue favourites (P2-3) ──────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/{venue_ref}/favourite")
+    def toggle_favourite(event_id: int, venue_ref: str, on: str = Form("1")):
+        """Mark or unmark a venue as a favourite.
+
+        Deliberately does NOT re-stage the venue decision: a favourite is a
+        marker, not an answer, and toggling it must not disturb a choice the
+        coordinator already made.
+        """
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.set_favourite(conn, venue_ref, on.strip() not in ("0", "", "false"))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
 
     # ── city revision (recovery path when a city has no venue data) ──────────
 
@@ -357,10 +587,172 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
+    # ── visuals (P2-4) ───────────────────────────────────────────────────────
+
+    def _visuals_dir(event_id: int) -> str:
+        return os.path.join("generated", "visuals", str(event_id))
+
+    def _visuals_page(request: Request, conn, event_id: int, event,
+                      problem: str = ""):
+        playbook = compose_playbook(conn, event_id)
+        upload = os.path.join(_visuals_dir(event_id), "city.png")
+        results = []
+        try:
+            results = render_all(VisualRequest(
+                event_name=event.name,
+                city=event.city or "",
+                dates=_event_dates(conn, event_id),
+                city_image=upload if os.path.exists(upload) else None,
+                out_dir=_visuals_dir(event_id),
+            ))
+        except ValueError as exc:
+            problem = problem or str(exc)
+        return templates.TemplateResponse(request, "visuals.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "visuals"),
+            "event_id": event_id,
+            "results": results,
+            "has_upload": os.path.exists(upload),
+            "open_questions": playbook.open_questions,
+            "problem": problem,
+        })
+
+    def _event_dates(conn, event_id: int) -> str:
+        variables = {v.kind: v.value for v in repo.list_variables(conn, event_id)}
+        start, end = variables.get("start_date", ""), variables.get("end_date", "")
+        if start and end:
+            return f"{start} – {end}"
+        return start or ""
+
+    @app.get("/events/{event_id}/visuals", response_class=HTMLResponse)
+    def visuals_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _visuals_page(request, conn, event_id, load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/visuals/upload", response_class=HTMLResponse)
+    async def visuals_upload(request: Request, event_id: int,
+                             city_image: UploadFile = File(...)):
+        """Ingest a city photo. EXIF (including GPS) is stripped on the way in."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            raw = await city_image.read()
+            os.makedirs(_visuals_dir(event_id), exist_ok=True)
+            tmp = os.path.join(_visuals_dir(event_id), "_incoming")
+            with open(tmp, "wb") as fh:
+                fh.write(raw)
+            problem = ""
+            try:
+                strip_exif(tmp, os.path.join(_visuals_dir(event_id), "city.png"))
+            except Exception:
+                problem = ("That file could not be read as an image. "
+                           "Upload a JPEG or PNG.")
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            return _visuals_page(request, conn, event_id, event, problem=problem)
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/visuals/{variant}-{aspect}.png")
+    def visual_png(event_id: int, variant: str, aspect: str):
+        path = os.path.join(_visuals_dir(event_id), _slugify_event(event_id),
+                            f"{variant}-{aspect}.png")
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="Not rendered yet.")
+        with open(path, "rb") as fh:
+            return Response(content=fh.read(), media_type="image/png")
+
+    def _slugify_event(event_id: int) -> str:
+        conn = connect()
+        try:
+            from app.features.visuals import _slug
+
+            return _slug(load_event(conn, event_id).name)
+        finally:
+            conn.close()
+
+    # ── invite issuance (P2-5 / phase-1 gap) ─────────────────────────────────
+
+    def _invites_page(request: Request, conn, event_id: int, event,
+                      issued=None, problem: str = "", form=None):
+        """Render the invite desk. ``form`` carries back what was typed, so a
+        validation failure never makes the coordinator retype everything."""
+        return templates.TemplateResponse(request, "invites.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "invites"),
+            "event_id": event_id,
+            "attendees": repo.list_attendees(conn, event_id),
+            "issued": issued,
+            "problem": problem,
+            "form": form or {},
+        })
+
+    @app.get("/events/{event_id}/invites", response_class=HTMLResponse)
+    def invites_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _invites_page(request, conn, event_id,
+                                 load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/invites", response_class=HTMLResponse)
+    def invites_issue(request: Request, event_id: int,
+                      full_name: str = Form(""), email: str = Form(""),
+                      title: str = Form(""), company: str = Form(""),
+                      is_vip: str = Form("")):
+        typed = {"full_name": full_name, "email": email, "title": title,
+                 "company": company, "is_vip": is_vip}
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                person = issue_invitation(
+                    conn, _signing_secret(), event_id, full_name=full_name,
+                    email=email, title=title, company=company,
+                    is_vip=is_vip.strip() not in ("", "0", "false"))
+            except ValueError as exc:
+                return _invites_page(request, conn, event_id, event,
+                                     problem=str(exc), form=typed)
+            conn.commit()
+            return _invites_page(request, conn, event_id, event, issued=person)
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/invites/{attendee_id}/qr.png")
+    def invite_qr(event_id: int, attendee_id: int):
+        """The credential as a scannable image, so it can be emailed or printed."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            person = repo.get_attendee(conn, attendee_id)
+            if person is None or person.event_id != event_id:
+                raise HTTPException(status_code=404, detail="No such invitee.")
+            if not person.checkin_code:
+                raise HTTPException(status_code=404,
+                                    detail="No credential has been issued yet.")
+        finally:
+            conn.close()
+        import io
+
+        import qrcode
+
+        buf = io.BytesIO()
+        qrcode.make(person.checkin_code).save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+
     # ── check-in (day-of operation) ──────────────────────────────────────────
 
     def _checkin_page(request: Request, conn, event_id: int, event,
-                      scan_state: Optional[str] = None, scan_name: str = ""):
+                      scan_state: Optional[str] = None, scan_name: str = "",
+                      attendee=None, problem: str = ""):
+        # A VIP banner only on a NEW arrival: re-announcing on a repeat scan
+        # would train the desk to ignore it.
+        vip = bool(attendee and attendee.is_vip and scan_state == STATE_VALID)
         return templates.TemplateResponse(request, "checkin.html", {
             "event": event,
             "steps": nav_steps(conn, event_id, "checkin"),
@@ -368,6 +760,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "attendees": repo.list_attendees(conn, event_id),
             "scan_state": scan_state,
             "scan_name": scan_name,
+            "scan_vip": vip,
+            "scan_company": getattr(attendee, "company", None) if vip else None,
+            "problem": problem,
         })
 
     @app.get("/events/{event_id}/checkin", response_class=HTMLResponse)
@@ -394,20 +789,55 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             conn.commit()
             name = attendee.full_name if attendee else ""
             return _checkin_page(request, conn, event_id, event,
-                                 scan_state=state, scan_name=name)
+                                 scan_state=state, scan_name=name,
+                                 attendee=attendee)
         finally:
             conn.close()
 
-    @app.post("/events/{event_id}/checkin/walkin")
-    def checkin_walkin(event_id: int, full_name: str = Form(...)):
+    @app.post("/events/{event_id}/checkin/email", response_class=HTMLResponse)
+    def checkin_email(request: Request, event_id: int, email: str = Form("")):
+        """Check in an invited guest who arrived without their code."""
         conn = connect()
         try:
-            load_event(conn, event_id)
-            self_check_in(conn, event_id, full_name)
+            event = load_event(conn, event_id)
+            try:
+                state, attendee = check_in_by_email(conn, event_id, email)
+            except ValueError as exc:
+                return _checkin_page(request, conn, event_id, event,
+                                     problem=str(exc))
             conn.commit()
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=state,
+                                 scan_name=attendee.full_name if attendee else "",
+                                 attendee=attendee)
         finally:
             conn.close()
-        return RedirectResponse(f"/events/{event_id}/checkin", status_code=303)
+
+    @app.post("/events/{event_id}/checkin/walkin", response_class=HTMLResponse)
+    def checkin_walkin(request: Request, event_id: int,
+                       full_name: str = Form(""), email: str = Form(""),
+                       title: str = Form(""), company: str = Form(""),
+                       is_vip: str = Form("")):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                attendee = register_walk_in(
+                    conn, event_id, full_name=full_name, email=email,
+                    title=title, company=company,
+                    is_vip=is_vip.strip() not in ("", "0", "false"))
+            except ValueError as exc:
+                # Render the desk with the reason rather than a raw 400: the
+                # person is standing there and the operator needs to fix it now.
+                return _checkin_page(request, conn, event_id, event,
+                                     problem=str(exc))
+            conn.commit()
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=STATE_VALID,
+                                 scan_name=attendee.full_name or "",
+                                 attendee=attendee)
+        finally:
+            conn.close()
 
     return app
 
