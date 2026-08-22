@@ -212,6 +212,7 @@ _ADDED_COLUMNS = (
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
     ("events", "starts_at", "TEXT"),
     ("events", "ends_at", "TEXT"),
+    ("library_images", "backdrop_kind", "TEXT NOT NULL DEFAULT 'unknown'"),
 )
 
 #: Tables added after the first release. CREATE TABLE IF NOT EXISTS in SCHEMA
@@ -710,12 +711,14 @@ def add_library_image(conn: sqlite3.Connection, image: LibraryImage) -> int:
     repeated source_url updates in place rather than inserting."""
     cur = conn.execute(
         "INSERT INTO library_images (event_id, path, source_url, article_title, "
-        "article_url, origin, width, height) VALUES (?,?,?,?,?,?,?,?) "
+        "article_url, origin, width, height, backdrop_kind) "
+        "VALUES (?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(event_id, source_url) DO UPDATE SET path=excluded.path, "
         "article_title=excluded.article_title, width=excluded.width, "
-        "height=excluded.height",
+        "height=excluded.height, backdrop_kind=excluded.backdrop_kind",
         (image.event_id, image.path, image.source_url, image.article_title,
-         image.article_url, image.origin, image.width, image.height),
+         image.article_url, image.origin, image.width, image.height,
+         image.backdrop_kind),
     )
     if cur.lastrowid:
         return int(cur.lastrowid)
@@ -730,7 +733,8 @@ def _row_to_library_image(row) -> LibraryImage:
         id=row["id"], event_id=row["event_id"], path=row["path"],
         source_url=row["source_url"], article_title=row["article_title"],
         article_url=row["article_url"], origin=row["origin"],
-        width=row["width"], height=row["height"], created_at=row["created_at"])
+        width=row["width"], height=row["height"],
+        backdrop_kind=row["backdrop_kind"], created_at=row["created_at"])
 
 
 def library_images(conn: sqlite3.Connection, event_id: int) -> List[LibraryImage]:

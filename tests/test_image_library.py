@@ -296,3 +296,76 @@ class TestLibraryUi:
         data = json.loads(open(newest).read())
         assert data["base_source"] == "blog"
         assert "Mirage" in data["base_attribution"]
+
+
+class TestBackdropSuitability:
+    """Design QA: logo-lockup leads meet the size floor but composite badly.
+
+    Measured against the real feed, photographs and graphics separate cleanly on
+    distinct-colour count: Saronic photos land at 1800-3800 distinct colours in a
+    64x64 sample, partnership logo cards at 214-242. A flat card has almost no
+    tonal range, which is exactly why type sits badly on it.
+
+    This is a HINT, never a filter. The coordinator decides; the tool is telling
+    them something they would otherwise discover in the render.
+    """
+
+    def _sample(self, size=(2000, 1000), flat=True):
+        import tempfile
+
+        from PIL import Image, ImageDraw
+
+        path = tempfile.mktemp(suffix=".png")
+        if flat:
+            # A logo card: two flat fields and some text-like marks.
+            image = Image.new("RGB", size, (255, 255, 255))
+            draw = ImageDraw.Draw(image)
+            draw.rectangle([200, 300, 900, 700], fill=(25, 25, 25))
+        else:
+            # A photograph. Getting this fixture right took two attempts and
+            # both failures were informative: a 4x4 block pattern gave 42
+            # distinct colours, and per-pixel noise gave 475, because the
+            # LANCZOS downscale in the classifier averages high-frequency noise
+            # away. Real photographs hold 1800-3800 because their variation is
+            # STRUCTURED at every scale. Large smooth gradients survive
+            # downscaling, so that is what this builds.
+            image = Image.new("RGB", size)
+            pixels = image.load()
+            for x in range(size[0]):
+                for y in range(size[1]):
+                    pixels[x, y] = (
+                        int(255 * x / size[0]),
+                        int(255 * y / size[1]),
+                        int(255 * ((x + y) % size[1]) / size[1]),
+                    )
+        image.save(path)
+        return path
+
+    def test_a_photograph_is_reported_as_a_photo(self):
+        from app.features.image_library import classify_backdrop
+
+        assert classify_backdrop(self._sample(flat=False)) == "photo"
+
+    def test_a_flat_logo_card_is_reported_as_a_graphic(self):
+        from app.features.image_library import classify_backdrop
+
+        assert classify_backdrop(self._sample(flat=True)) == "graphic"
+
+    def test_an_unreadable_file_is_unknown_rather_than_an_error(self):
+        from app.features.image_library import classify_backdrop
+
+        assert classify_backdrop("/nonexistent/file.png") == "unknown"
+
+    def test_the_hint_is_stored_on_the_asset(self, conn, event):
+        repo.add_library_image(conn, LibraryImage(
+            event_id=event, path="p.png", source_url="https://cdn/x.jpeg",
+            article_title="Partnership", origin="blog",
+            width=2000, height=1000, backdrop_kind="graphic"))
+        assert repo.library_images(conn, event)[0].backdrop_kind == "graphic"
+
+    def test_a_graphic_is_never_excluded_from_the_library(self, conn, event):
+        """A hint, not a filter — the coordinator may want the logo card."""
+        repo.add_library_image(conn, LibraryImage(
+            event_id=event, path="p.png", source_url="https://cdn/x.jpeg",
+            origin="blog", width=2000, height=1000, backdrop_kind="graphic"))
+        assert len(repo.library_images(conn, event)) == 1

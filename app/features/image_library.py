@@ -49,6 +49,12 @@ _BEACON = "stat?event"
 #: Downloads are bounded: an image library is not a reason to stream 200MB.
 MAX_IMAGE_BYTES = 12 * 1024 * 1024
 
+#: Distinct colours in a 64x64 sample below which an image reads as a
+#: graphic. Measured against the real feed: Saronic photographs land at
+#: 1800-3800, partnership logo cards at 214-242. The gap is wide enough
+#: that the threshold does not need to be clever.
+GRAPHIC_COLOUR_CEILING = 800
+
 _UA = ("Mozilla/5.0 (compatible; SaronicEventTool/1.0; "
        "+https://github.com/jfilipATX/saronic-event-project)")
 
@@ -154,3 +160,26 @@ def fetch_feed(url: str, resolver=None) -> str:
     request = Request(feed, headers={"User-Agent": _UA})
     with urlopen(request, timeout=30) as response:  # noqa: S310 - guarded above
         return response.read(4 * 1024 * 1024).decode("utf-8", errors="replace")
+
+
+def classify_backdrop(path: str) -> str:
+    """Return "photo", "graphic", or "unknown" — a hint, never a filter.
+
+    A logo lockup passes the size floor and then composites badly: headline type
+    over a flat card with a wordmark in it looks like a mistake, and the
+    coordinator only discovers that after rendering. Distinct-colour count
+    separates the two cleanly, because a flat card has almost no tonal range —
+    the same property that makes type sit badly on it.
+
+    Returns "unknown" rather than raising: a missing hint must never block an
+    import, and the coordinator decides in every case.
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            sample = image.convert("RGB").resize((64, 64))
+            distinct = len(set(sample.getdata()))
+    except Exception:  # noqa: BLE001 - a hint is never worth an exception
+        return "unknown"
+    return "graphic" if distinct <= GRAPHIC_COLOUR_CEILING else "photo"

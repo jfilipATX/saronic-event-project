@@ -56,6 +56,10 @@
               Uploaded
             {% endif %}
             <span class="muted">{{ image.width }}&times;{{ image.height }}</span>
+            {% if image.backdrop_kind == 'graphic' %}
+              <span class="muted">· Looks like a graphic or logo card — type may
+              sit badly over it. Usable, but a photograph composites better.</span>
+            {% endif %}
           </p>
           <div class="option-actions">
             <form method="post"

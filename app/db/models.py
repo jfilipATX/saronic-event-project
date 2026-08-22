@@ -87,6 +87,9 @@ class LibraryImage:
     origin: str = "uploaded"
     width: int = 0
     height: int = 0
+    #: "photo" | "graphic" | "unknown" — composite suitability HINT. A logo
+    #: lockup passes the size floor and still makes a poor backdrop.
+    backdrop_kind: str = "unknown"
     created_at: Optional[str] = None
 
 

@@ -47,6 +47,7 @@ from app.features.venue_scrape import (
     venue_from_facts,
 )
 from app.features.image_library import (
+    classify_backdrop,
     fetch_feed,
     fetch_image,
     parse_feed,
@@ -1049,7 +1050,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                     source_url=asset.source_url,
                     article_title=asset.article_title,
                     article_url=asset.article_url,
-                    origin="blog", width=width, height=height))
+                    origin="blog", width=width, height=height,
+                    backdrop_kind=classify_backdrop(destination)))
                 imported += 1
             conn.commit()
             if not problem and imported == 0:
