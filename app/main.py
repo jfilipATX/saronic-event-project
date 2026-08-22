@@ -399,6 +399,10 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         form = await request.form()
         name = (form.get("name") or "").strip()
         city = (form.get("city") or "").strip()
+        state = (form.get("state") or "").strip()
+        # Country defaults to US (Joseph's standing default); a blank form field
+        # must not produce a broken location line.
+        country = (form.get("country") or "US").strip() or "US"
         if not name or not city:
             raise HTTPException(status_code=400,
                                 detail="An event needs a name and a city.")
@@ -411,7 +415,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
         conn = connect()
         try:
-            event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
+            event_id = CoordinatorWorkflow(conn).start_event(
+                name=name, city=city, state=state, country=country)
             if window.is_set:
                 repo.set_event_window(conn, event_id, window)
             source_url = (form.get("source_url") or "").strip()

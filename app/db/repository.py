@@ -40,9 +40,10 @@ def init_db(db_path: str = "events.db") -> None:
 
 def create_event(conn: sqlite3.Connection, event: Event) -> int:
     cur = conn.execute(
-        "INSERT INTO events (name, city, audience_estimate, event_type) "
-        "VALUES (?,?,?,?)",
-        (event.name, event.city, event.audience_estimate, event.event_type),
+        "INSERT INTO events (name, city, state, country, audience_estimate, "
+        "event_type) VALUES (?,?,?,?,?,?)",
+        (event.name, event.city, event.state, event.country or "US",
+         event.audience_estimate, event.event_type),
     )
     return int(cur.lastrowid)
 
@@ -212,6 +213,8 @@ _ADDED_COLUMNS = (
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
     ("events", "starts_at", "TEXT"),
     ("events", "ends_at", "TEXT"),
+    ("events", "state", "TEXT"),
+    ("events", "country", "TEXT NOT NULL DEFAULT 'US'"),
     ("library_images", "backdrop_kind", "TEXT NOT NULL DEFAULT 'unknown'"),
 )
 

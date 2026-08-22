@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS events (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT NOT NULL,
     city          TEXT,
+    state         TEXT,
+    country       TEXT NOT NULL DEFAULT 'US',
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     audience_estimate INTEGER,
     event_type    TEXT,

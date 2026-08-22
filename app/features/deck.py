@@ -58,7 +58,7 @@ def build_deck(playbook: Playbook, resolver: ImageResolver,
     slides: List[Slide] = []
 
     # ── Title ──
-    subtitle_bits = [b for b in (ev.city, ev.event_type) if b]
+    subtitle_bits = [b for b in (ev.location, ev.event_type) if b]
     if ev.audience_estimate:
         subtitle_bits.append(f"{ev.audience_estimate:,} attendees")
 

@@ -5,6 +5,7 @@
 {% block content %}
   <p class="eyebrow">Door operations</p>
   <h1>Check-in</h1>
+  <p class="muted">{{ event.location }}</p>
 
   {% if scan_state == 'valid' %}
     <div class="scan-banner scan-valid">

@@ -25,6 +25,17 @@
   <form method="post" action="/events" class="form-row">
     <input class="input" type="text" name="name" placeholder="Event name" required>
     <input class="input" type="text" name="city" placeholder="City" required>
+    <input class="input" type="text" name="state" placeholder="State (e.g. TX)" title="US state abbreviation">
+    <select class="input" name="country" title="Country">
+      <option value="US" selected>United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="CA">Canada</option>
+      <option value="AU">Australia</option>
+      <option value="DE">Germany</option>
+      <option value="FR">France</option>
+      <option value="JP">Japan</option>
+      <option value="SG">Singapore</option>
+    </select>
     <input class="input" type="datetime-local" name="starts_at" title="Starts (optional)">
     <input class="input" type="datetime-local" name="ends_at" title="Ends (optional)">
     <button class="btn-primary" type="submit">Create event</button>
@@ -37,7 +48,7 @@
         <li class="option-card">
           <span class="option-label">{{ e.name }}</span>
           <div class="option-meta">
-            {% if e.city %}<span>{{ e.city }}</span>{% endif %}
+            {% if e.location %}<span>{{ e.location }}</span>{% endif %}
             {% if e.event_type %}<span>{{ e.event_type }}</span>{% endif %}
             {% if e.audience_estimate %}<span>{{ "{:,}".format(e.audience_estimate) }} attendees</span>{% endif %}
           </div>

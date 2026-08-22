@@ -60,8 +60,10 @@ class CoordinatorWorkflow:
 
     # ── staging ──────────────────────────────────────────────────────────────
 
-    def start_event(self, name: str, city: str) -> int:
-        event_id = repo.create_event(self.conn, Event(name=name, city=city))
+    def start_event(self, name: str, city: str, state: str = "",
+                    country: str = "US") -> int:
+        event_id = repo.create_event(self.conn, Event(
+            name=name, city=city, state=state or None, country=country or "US"))
         self._stage_event_type(event_id, city)
         return event_id
 
