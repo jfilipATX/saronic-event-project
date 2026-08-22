@@ -105,6 +105,12 @@ components:
     typography: "{typography.h2}"
     rounded: "{rounded.md}"
     padding: 16px
+  scan-withdrawn:
+    backgroundColor: "{colors.steel}"
+    textColor: "#0C141B"
+    typography: "{typography.h2}"
+    rounded: "{rounded.md}"
+    padding: 16px
   slide-title-onsite:
     backgroundColor: "{colors.background}"
     textColor: "{colors.neutral}"
@@ -214,8 +220,11 @@ divider on slide titles — decorative use only, never on data UI.
   presents (venue option, audience estimate, slide draft) renders in one of
   these with *options + reasoning*, and a `button-primary` to confirm.
 - **muted-text** — captions, metadata, "why we suggest this" reasoning lines.
-- **scan-valid / scan-already / scan-tampered** — the three QR outcomes, 1:1
-  with the signed-token validator, dark text on saturated fills.
+- **scan-valid / scan-already / scan-tampered / scan-withdrawn** — the QR
+  outcomes, 1:1 with the signed-token validator, dark text on their fills.
+  Withdrawn uses steel deliberately: a cancelled invitation is an *admin*
+  outcome, not a security one — it must never borrow the amber replay fill
+  or read as tampering.
 - **slide-title-onsite / slide-body-onsite** — 16:9 display text blocks.
 - **playbook-page / playbook-heading** — the exportable playbook document:
   light surface, ink text, Archivo Expanded headings, full-logo dark lockup in

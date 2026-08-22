@@ -145,6 +145,9 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .scan-valid    { background: var(--color-success); }
 .scan-already  { background: var(--color-warning); }
 .scan-tampered { background: var(--color-danger); }
+/* withdrawn: an admin outcome, not a security one — steel, distinct from the
+   amber replay banner so a cancelled guest is never read as a burned credential */
+.scan-withdrawn { background: var(--color-steel); }
 
 /* ── form inputs (dark-surface, token-driven) ─────────────── */
 .input {

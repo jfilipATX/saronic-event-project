@@ -16,7 +16,7 @@
       — this credential was used earlier.
     </div>
   {% elif scan_state == 'withdrawn' %}
-    <div class="scan-banner scan-already">
+    <div class="scan-banner scan-withdrawn">
       Invitation withdrawn{% if scan_name %}: <strong>{{ scan_name }}</strong>{% endif %}
       <span class="scan-detail">This invitation was cancelled, so the code no
       longer admits. Not a forged credential — check with the coordinator, or
