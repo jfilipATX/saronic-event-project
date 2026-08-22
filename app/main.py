@@ -32,7 +32,7 @@ from app.db.models import (
     EventVariable,
     LibraryImage,
     Segment,
-    Staff,
+    Person,
 )
 from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
@@ -104,7 +104,7 @@ _CHAIN_KEYS = set(CHAIN)
 
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("schedule", "Schedule"), ("run-of-show", "Run of show"),
+    + [("people", "People"), ("schedule", "Schedule"), ("run-of-show", "Run of show"),
        ("slides", "Slides"), ("visuals", "Visuals"),
        ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
@@ -231,9 +231,10 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         live = {d.step: d for d in repo.current_decisions(conn, event_id)}
         steps: List[NavStep] = []
         for key, label in _NAV:
-            if key == "playbook":
-                state = "active" if current == "playbook" else "todo"
-                url = f"/events/{event_id}/playbook"
+            if key in ("playbook", "people"):
+                # Global views with no event scope: not /events/{id}/{key}.
+                state = "active" if current == key else "todo"
+                url = f"/{key}" if key == "people" else f"/events/{event_id}/playbook"
             elif key not in _CHAIN_KEYS:
                 # Anything that is not a decision-chain step is a derived view
                 # at /events/{id}/{key}. Deriving this from CHAIN rather than
@@ -767,7 +768,14 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     def _run_of_show_page(request: Request, conn, event_id: int, event,
                           problem: str = "", form=None, view: str = "list"):
         segments = repo.list_segments(conn, event_id)
-        staff = repo.list_staff(conn, event_id, include_erased=True)
+        # The owner picker draws from the global people pool (P5-5), reading each
+        # person's per-event assignment (role override + can_check_in) for this
+        # event. People not yet assigned to this event can still be picked as an
+        # owner — attaching is implicit on selection. Erased people stay in the
+        # pool mapping because a past segment can still reference them.
+        pool = {p.id: p for p in repo.list_people(conn, include_erased=True)}
+        assigned = {r["person_id"]: r for r in
+                    repo.event_staff_rows(conn, event_id)}
         window = window_for_event(conn, event_id)
         flags = conflicts_for(segments)
         return templates.TemplateResponse(request, "run_of_show.html", {
@@ -781,8 +789,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "board_px": board_width_px(window),
             "now_pct": now_line_pct(window),
             "flags": flags,
-            "staff": [p for p in staff if not p.is_erased],
-            "staff_by_id": {p.id: p for p in staff},
+            "pool": pool,
+            "assigned": assigned,
+            "staff": [pool[i] for i in sorted(assigned)
+                      if not pool[i].is_erased],
+            "staff_by_id": pool,
             "tracks": sorted({s.track for s in segments} | set(DEFAULT_TRACKS)),
             "kinds": [(k, KIND_LABELS[k]) for k in SEGMENT_KINDS],
             "window": window,
@@ -801,17 +812,43 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
-    @app.post("/events/{event_id}/run-of-show/staff")
-    def run_of_show_add_staff(event_id: int, name: str = Form(""),
-                              role: str = Form("")):
+    @app.post("/events/{event_id}/run-of-show/staff/assign")
+    def run_of_show_assign_staff(event_id: int, name: str = Form(""),
+                                 role: str = Form(""),
+                                 can_check_in: bool = Form(False)):
+        """Add a person to the global pool if new, then attach them to this
+        event (P5-5/P5-9). ``can_check_in`` is the per-event grant, not a global
+        trait — it never bleeds into other events for this person."""
         conn = connect()
         try:
             load_event(conn, event_id)
-            try:
-                repo.add_staff(conn, Staff(event_id=event_id, name=name,
-                                           role=role))
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from None
+            name = (name or "").strip()
+            if not name:
+                raise HTTPException(status_code=400,
+                                    detail="A staff member needs a name.")
+            # Reuse an existing pool person with the same name rather than
+            # duplicating them across events.
+            existing = conn.execute(
+                "SELECT id FROM people WHERE name=? AND erased_at IS NULL",
+                (name,)).fetchone()
+            person_id = (existing["id"] if existing
+                         else repo.add_person(conn, Person(name=name, role=role)))
+            repo.assign_staff(conn, event_id, person_id, role=role,
+                              can_check_in=can_check_in)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/staff/{staff_id}/remove")
+    def run_of_show_remove_staff(event_id: int, staff_id: int):
+        """Remove the person from THIS event only (P5-9). The Person stays in
+        the global pool — this is not erasure."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.remove_staff(conn, event_id, staff_id)
             conn.commit()
         finally:
             conn.close()
@@ -824,7 +861,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             try:
-                repo.erase_staff(conn, staff_id)
+                repo.erase_person(conn, staff_id)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from None
             conn.commit()
@@ -832,6 +869,53 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             conn.close()
         return RedirectResponse(f"/events/{event_id}/run-of-show",
                                 status_code=303)
+
+    # ── global people pool (P5-5) ──────────────────────────────────────────────
+
+    @app.get("/people", response_class=HTMLResponse)
+    def people_pool_view(request: Request):
+        conn = connect()
+        try:
+            people = repo.list_people(conn, include_erased=True)
+            return templates.TemplateResponse(request, "people.html", {
+                "people": [p for p in people if not p.is_erased],
+                "erased": [p for p in people if p.is_erased],
+            })
+        finally:
+            conn.close()
+
+    @app.post("/people")
+    def people_add(name: str = Form(""), role: str = Form("")):
+        """Create a person in the global pool (P5-5). Reuses an existing pool
+        person with the same name rather than duplicating them."""
+        conn = connect()
+        try:
+            name = (name or "").strip()
+            if not name:
+                raise HTTPException(status_code=400,
+                                    detail="A staff member needs a name.")
+            existing = conn.execute(
+                "SELECT id FROM people WHERE name=? AND erased_at IS NULL",
+                (name,)).fetchone()
+            if not existing:
+                repo.add_person(conn, Person(name=name, role=role))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/people", status_code=303)
+
+    @app.post("/people/{person_id}/erase")
+    def people_erase(person_id: int):
+        conn = connect()
+        try:
+            try:
+                repo.erase_person(conn, person_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/people", status_code=303)
 
     @app.post("/events/{event_id}/run-of-show/seed")
     def run_of_show_seed(event_id: int):

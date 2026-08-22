@@ -1,0 +1,51 @@
+<!-- people.html — global staff pool (P5-5).
+     Context: people (list of Person), erased (list of Person). -->
+{% extends "base.html" %}
+{% block title %}People — Saronic Event Tool{% endblock %}
+{% block content %}
+  <div class="page">
+    <h1>People</h1>
+    <p class="muted">
+      Staff are a shared pool across every event. Add a person once; assign them
+      per event on each Run of show, where their <strong>role</strong> carries
+      over but the <strong>can check in</strong> grant is set per event.
+    </p>
+
+    <h2>Pool</h2>
+    {% if people %}
+      <ul class="staff-roster">
+        {% for person in people %}
+          <li class="roster-row card-surface">
+            <span>
+              <strong>{{ person.display_name }}</strong>
+              {% if person.role %}<span class="muted"> · {{ person.role }}</span>{% endif %}
+            </span>
+            <span class="option-actions">
+              <form method="post" action="/people/{{ person.id }}/erase">
+                <button class="btn-quiet" type="submit">Erase</button>
+              </form>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No people yet — add the first one below.</p>
+    {% endif %}
+
+    <form method="post" action="/people" class="form-row">
+      <input class="input" type="text" name="name" placeholder="Name" required>
+      <input class="input" type="text" name="role" placeholder="Role (carries to new events)">
+      <button class="btn-quiet" type="submit">Add to pool</button>
+    </form>
+
+    {% if erased %}
+      <h2>Erased</h2>
+      <p class="muted">Anonymised — kept only as a safety record that a shift was covered.</p>
+      <ul class="staff-roster">
+        {% for person in erased %}
+          <li class="roster-row card-surface muted">{{ person.display_name }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endblock %}

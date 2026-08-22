@@ -317,7 +317,28 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .owner-clash { color: #D8A24C; border-color: rgba(216, 162, 76, 0.6); }
 .clash-note { color: #D8A24C; font-size: 0.85rem; }
 
-.board-scroll { overflow-x: auto; padding-bottom: 0.5rem; }
+/* P5-9 check-in grant tag — neutral, never amber (it's a role, not an alert). */
+.tag-checkin {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0 0.35rem;
+  border: 1px solid var(--color-steel, #9DA7AF);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--color-steel, #9DA7AF);
+}
+
+.staff-roster { list-style: none; padding: 0; margin: 0 0 1rem; }
+.roster-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+}
+.roster-row .option-actions { display: flex; gap: 0.4rem; }
+
 /* Fixed zoom: board-inner is as wide as the event needs and SCROLLS. Never
    width:100% — that is auto-compression, which clipped titles to "Load-". */
 .board-inner { position: relative; }

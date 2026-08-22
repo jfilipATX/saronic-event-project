@@ -15,7 +15,7 @@ from typing import Dict, Iterator, List, Optional
 from app.db.models import (
     Attendee, Decision, DecisionOption, Event, EventVariable, LibraryImage,
     Segment,
-    SpendEntry, Staff,
+    SpendEntry, Person,
     VenueUse, VipAlert,
 )
 from app.db import schema_sql_text as _sql
@@ -605,51 +605,129 @@ def replace_options(conn: sqlite3.Connection, decision_id: int,
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def add_staff(conn: sqlite3.Connection, person: Staff) -> int:
+def add_person(conn: sqlite3.Connection, person: Person) -> int:
+    """Add a human to the global pool. The id is assigned here and stays stable
+    across every event the person is later attached to, so a run-of-show segment
+    that records an owner keeps pointing at the same human everywhere."""
     name = (person.name or "").strip()
     if not name:
         raise ValueError("A staff member needs a name.")
     cur = conn.execute(
-        "INSERT INTO staff (event_id, name, role) VALUES (?,?,?)",
-        (person.event_id, name, (person.role or "").strip() or None),
+        "INSERT INTO people (name, role) VALUES (?,?)",
+        (name, (person.role or "").strip() or None),
     )
     return int(cur.lastrowid)
 
 
-def _row_to_staff(row) -> Staff:
-    return Staff(id=row["id"], event_id=row["event_id"], name=row["name"],
-                 role=row["role"], erased_at=row["erased_at"])
+def _row_to_person(row) -> Person:
+    return Person(id=row["id"], name=row["name"], role=row["role"],
+                  erased_at=row["erased_at"])
 
 
-def list_staff(conn: sqlite3.Connection, event_id: int,
-               include_erased: bool = False) -> List[Staff]:
-    sql_text = "SELECT * FROM staff WHERE event_id=?"
+def list_people(conn: sqlite3.Connection,
+                include_erased: bool = False) -> List[Person]:
+    sql_text = "SELECT * FROM people"
     if not include_erased:
-        sql_text += " AND erased_at IS NULL"
+        sql_text += " WHERE erased_at IS NULL"
     sql_text += " ORDER BY id"
-    return [_row_to_staff(r) for r in conn.execute(sql_text, (event_id,))]
+    return [_row_to_person(r) for r in conn.execute(sql_text)]
 
 
-def get_staff(conn: sqlite3.Connection, staff_id: int) -> Optional[Staff]:
-    row = conn.execute("SELECT * FROM staff WHERE id=?", (staff_id,)).fetchone()
-    return _row_to_staff(row) if row else None
+def get_person(conn: sqlite3.Connection, person_id: int) -> Optional[Person]:
+    row = conn.execute("SELECT * FROM people WHERE id=?",
+                       (person_id,)).fetchone()
+    return _row_to_person(row) if row else None
 
 
-def erase_staff(conn: sqlite3.Connection, staff_id: int) -> None:
-    """Destroy the person's identity, keep the record that a shift was covered.
+def assign_staff(conn: sqlite3.Connection, event_id: int, person_id: int,
+                 role: Optional[str] = None,
+                 can_check_in: bool = False) -> None:
+    """Attach a pool person to an event (P5-5). Idempotent: re-attaching records
+    the same person rather than duplicating them. ``can_check_in`` is a per-event
+    capability (P5-9), never derived from the person's global role.
 
-    Irreversible by design, and refuses a second attempt so a caller cannot
-    mistake 'already erased' for 'erased just now'.
+    Re-attaching with a different role/can_check_in *updates* the existing join
+    row — a person's event assignment is one row, not a growing pile.
     """
-    person = get_staff(conn, staff_id)
-    if person is None:
-        raise ValueError(f"No staff member {staff_id}.")
-    if person.is_erased:
-        raise ValueError(f"Staff member {staff_id} was already erased.")
+    existing = conn.execute(
+        "SELECT 1 FROM event_staff WHERE event_id=? AND person_id=?",
+        (event_id, person_id)).fetchone()
+    if existing is not None:
+        conn.execute(
+            "UPDATE event_staff SET role=?, can_check_in=? "
+            "WHERE event_id=? AND person_id=?",
+            ((role.strip() if role else None), int(bool(can_check_in)),
+             event_id, person_id))
+        return
     conn.execute(
-        "UPDATE staff SET name=NULL, role=NULL, erased_at=? WHERE id=?",
-        (_now(), staff_id),
-    )
+        "INSERT INTO event_staff (event_id, person_id, role, can_check_in) "
+        "VALUES (?,?,?,?)",
+        (event_id, person_id, (role.strip() if role else None),
+         int(bool(can_check_in))))
+
+
+def event_staff(conn: sqlite3.Connection, event_id: int) -> List[int]:
+    """Person ids attached to this event, in id order."""
+    return [r["person_id"] for r in conn.execute(
+        "SELECT person_id FROM event_staff WHERE event_id=? ORDER BY person_id",
+        (event_id,))]
+
+
+def event_staff_rows(conn: sqlite3.Connection, event_id: int) -> List[dict]:
+    """Full assignment rows for this event (person_id, role, can_check_in),
+    ordered by person id — what the run-of-show picker and check-in gating read."""
+    return [dict(r) for r in conn.execute(
+        "SELECT person_id, role, can_check_in FROM event_staff "
+        "WHERE event_id=? ORDER BY person_id", (event_id,))]
+
+
+def remove_staff(conn: sqlite3.Connection, event_id: int,
+                 person_id: int) -> None:
+    """Drop the per-event assignment row. The Person stays in the global pool —
+    this is NOT erasure (P5-9: removing someone from an event is not deleting
+    them from the organisation)."""
+    conn.execute(
+        "DELETE FROM event_staff WHERE event_id=? AND person_id=?",
+        (event_id, person_id))
+
+
+def erase_person(conn: sqlite3.Connection, person_id: int) -> None:
+    """Destroy the identity in the global pool, keep the row for the safety
+    record. Irreversible by design, and refuses a second attempt so a caller
+    cannot mistake 'already erased' for 'erased just now'."""
+    person = get_person(conn, person_id)
+    if person is None:
+        raise ValueError(f"No person {person_id}.")
+    if person.is_erased:
+        raise ValueError(f"Person {person_id} was already erased.")
+    conn.execute(
+        "UPDATE people SET name=NULL, role=NULL, erased_at=? WHERE id=?",
+        (_now(), person_id))
+
+
+def migrate_staff_to_people(conn: sqlite3.Connection) -> None:
+    """Upgrade a pre-P5-5 database (P5-5).
+
+    Promote per-event ``staff`` rows into the global ``people`` pool, attach them
+    to their event via ``event_staff``, and **preserve ids** so every segment's
+    owner reference still resolves to the same human. Idempotent: once the
+    legacy table is gone this is a no-op, and a crash mid-migration leaves the
+    data intact so the next run finishes.
+    """
+    if not conn.execute("PRAGMA table_info(staff)").fetchall():
+        return  # No legacy staff table — already upgraded.
+    for row in conn.execute(
+            "SELECT id, event_id, name, role, erased_at FROM staff "
+            "ORDER BY id"):
+        # Keep the id: segments store owner ids that must keep their meaning.
+        conn.execute(
+            "INSERT OR IGNORE INTO people (id, name, role, erased_at) "
+            "VALUES (?,?,?,?)",
+            (row["id"], row["name"], row["role"], row["erased_at"]))
+        conn.execute(
+            "INSERT OR IGNORE INTO event_staff (event_id, person_id, role) "
+            "VALUES (?,?,?)", (row["event_id"], row["id"], row["role"]))
+    conn.execute("DROP TABLE IF EXISTS staff")
 
 
 def add_segment(conn: sqlite3.Connection, segment: Segment) -> int:

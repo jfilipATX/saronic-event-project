@@ -182,12 +182,13 @@
 
       <div class="form-field">
         <label>Owners</label>
-        {% if staff %}
+        {% if pool %}
           <div class="chip-group">
-            {% for person in staff %}
+            {% for pid, person in pool.items() %}
               <label class="chip-check">
-                <input type="checkbox" name="owners" value="{{ person.id }}">
-                <span>{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</span>
+                <input type="checkbox" name="owners" value="{{ pid }}"
+                       {% if pid in assigned %}checked{% endif %}>
+                <span>{{ person.display_name }}{% if assigned.get(pid, {}).get('role') %} · {{ assigned.get(pid, {}).get('role') }}{% elif person.role %} · {{ person.role }}{% endif %}</span>
               </label>
             {% endfor %}
           </div>
@@ -207,21 +208,45 @@
       </div>
     </form>
 
-    <h2>Staff</h2>
-    {% if staff %}
-      <p>
-        {% for person in staff %}
-          <span class="owner-chip">{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</span>
+    <h2>Staff for this event</h2>
+    {% if assigned %}
+      <ul class="staff-roster">
+        {% for pid, person in pool.items() if pid in assigned %}
+          {% set a = assigned.get(pid, {}) %}
+          <li class="roster-row card-surface">
+            <span class="owner-chip">
+              {{ person.display_name }}{% if a.get('role') %} · {{ a.get('role') }}{% elif person.role %} · {{ person.role }}{% endif %}
+              {% if a.get('can_check_in') %} <span class="tag-checkin">check-in</span>{% endif %}
+            </span>
+            <span class="option-actions">
+              <form method="post"
+                    action="/events/{{ event_id }}/run-of-show/staff/{{ pid }}/remove">
+                <button class="btn-quiet" type="submit">Remove from event</button>
+              </form>
+              <form method="post"
+                    action="/events/{{ event_id }}/run-of-show/staff/{{ pid }}/erase">
+                <button class="btn-quiet" type="submit">Erase everywhere</button>
+              </form>
+            </span>
+          </li>
         {% endfor %}
-      </p>
+      </ul>
     {% else %}
       <p class="muted">No staff yet — add the people who own parts of the day.</p>
     {% endif %}
-    <form method="post" action="/events/{{ event_id }}/run-of-show/staff"
+    <form method="post" action="/events/{{ event_id }}/run-of-show/staff/assign"
           class="form-row">
       <input class="input" type="text" name="name" placeholder="Name" required>
       <input class="input" type="text" name="role" placeholder="Role">
-      <button class="btn-quiet" type="submit">Add staff</button>
+      <label class="chip-check">
+        <input type="checkbox" name="can_check_in" value="true">
+        <span>Can check in attendees</span>
+      </label>
+      <button class="btn-quiet" type="submit">Add &amp; assign</button>
     </form>
+    {% if assigned %}
+      <p class="muted">Remove drops them from this event only; the person stays
+      in the global pool. Erase deletes them everywhere (irreversible).</p>
+    {% endif %}
   </div>
 {% endblock %}
