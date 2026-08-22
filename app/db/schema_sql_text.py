@@ -72,5 +72,16 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS vip_alerts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER NOT NULL,
+    attendee_id   INTEGER,
+    attendee_name TEXT NOT NULL,
+    company       TEXT,
+    arrived_at    TEXT,
+    delivered     INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_venue_uses_ref ON venue_uses(venue_ref, used_on);
 """

@@ -28,6 +28,28 @@
       <span class="scan-detail">Do not admit on this code — add as a walk-in
       below if the guest is expected.</span>
     </div>
+  {% elif scan_state == 'unknown' %}
+    <div class="scan-banner scan-withdrawn">
+      No invitation found for that email.
+      <span class="scan-detail">Nobody was created — check the spelling, or add
+      them as a walk-in below if they are expected.</span>
+    </div>
+  {% endif %}
+
+  {% if problem %}
+    <div class="pending-note">
+      <p><strong>Not recorded.</strong> {{ problem }}</p>
+      <p class="muted">Nobody was added — fix the field and submit again.</p>
+    </div>
+  {% endif %}
+
+  {% if scan_vip %}
+    <div class="pending-note">
+      <p><strong>VIP arrival: {{ scan_name }}</strong>
+      {%- if scan_company %} — {{ scan_company }}{% endif %}</p>
+      <p class="muted">Logged for the coordinator. No email was sent: SMTP is not
+      configured, so the alert is recorded rather than delivered.</p>
+    </div>
   {% endif %}
 
   <h2>Scan a credential</h2>
@@ -37,12 +59,31 @@
     <button class="btn-primary" type="submit">Check in</button>
   </form>
 
+  <h2>Check in by email</h2>
+  <p class="muted">For a guest who is on the list but arrived without their code.
+  This looks them up — it never creates someone new.</p>
+  <form method="post" action="/events/{{ event_id }}/checkin/email" class="form-row">
+    <input class="input" type="email" name="email" placeholder="Invited email address"
+           required>
+    <button class="btn-primary" type="submit">Look up and check in</button>
+  </form>
+
   <h2>Walk-in</h2>
   <p class="muted">No credential — recorded as self-reported, kept distinct from
   signature-verified arrivals.</p>
-  <form method="post" action="/events/{{ event_id }}/checkin/walkin" class="form-row">
-    <input class="input" type="text" name="full_name" placeholder="Guest name" required>
-    <button class="btn-primary" type="submit">Add walk-in</button>
+  <form method="post" action="/events/{{ event_id }}/checkin/walkin">
+    <div class="form-row">
+      <input class="input" type="text" name="full_name" placeholder="Full name" required>
+      <input class="input" type="email" name="email" placeholder="Email" required>
+    </div>
+    <div class="form-row">
+      <input class="input" type="text" name="title" placeholder="Job title" required>
+      <input class="input" type="text" name="company" placeholder="Company" required>
+    </div>
+    <div class="form-row">
+      <label class="muted"><input type="checkbox" name="is_vip" value="1"> VIP</label>
+      <button class="btn-primary" type="submit">Add walk-in</button>
+    </div>
   </form>
 
   <h2>Roster</h2>
@@ -50,7 +91,8 @@
     <ul class="option-list">
       {% for a in attendees %}
         <li class="option-card">
-          <span class="option-label">{{ a.full_name or "(unnamed)" }}</span>
+          <span class="option-label">{{ a.full_name or "(unnamed)" }}{% if a.is_vip %}
+            <span class="fit-badge fit-vip">VIP</span>{% endif %}</span>
           <div class="option-meta">
             {% if a.self_reported %}<span>Walk-in</span>{% else %}<span>Verified</span>{% endif %}
             {% if a.attended_at %}<span>Arrived {{ a.attended_at }}</span>

@@ -65,6 +65,24 @@ class EventVariable:
 
 
 @dataclass
+class VipAlert:
+    """A VIP arrival the coordinator should know about (P2-5).
+
+    ``delivered`` stays False until real email is configured: logging what WOULD
+    be sent is honest, whereas recording it as sent would have the coordinator
+    believe a notification went out when none did.
+    """
+
+    id: Optional[int] = None
+    event_id: int = 0
+    attendee_id: Optional[int] = None
+    attendee_name: str = ""
+    company: Optional[str] = None
+    arrived_at: Optional[str] = None
+    delivered: bool = False
+
+
+@dataclass
 class VenueUse:
     """A record that a venue hosted one of our events (P2-3).
 

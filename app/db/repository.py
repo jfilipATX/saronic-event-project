@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
 
 from app.db.models import (
-    Attendee, Decision, DecisionOption, Event, EventVariable, VenueUse,
+    Attendee, Decision, DecisionOption, Event, EventVariable, VenueUse, VipAlert,
 )
 from app.db import schema_sql_text as _sql
 
@@ -195,6 +195,10 @@ _ADDED_COLUMNS = (
     ("attendees", "company", "TEXT"),
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+#: Tables added after the first release. CREATE TABLE IF NOT EXISTS in SCHEMA
+#: already handles these on open, listed here for the record.
+_ADDED_TABLES = ("venue_favourites", "venue_uses", "vip_alerts")
 
 
 def apply_migrations(conn: sqlite3.Connection) -> list[str]:
@@ -415,3 +419,50 @@ def venue_uses(conn: sqlite3.Connection) -> Dict[str, List[VenueUse]]:
     for r in rows:
         grouped.setdefault(r["venue_ref"], []).append(VenueUse(**dict(r)))
     return grouped
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P2-5 — VIP arrival alerts
+#
+# Recorded, not sent. Until SMTP is configured, logging what WOULD be sent is
+# the honest option: marking these delivered would have the coordinator believe
+# a notification went out when none did.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def record_vip_alert(conn: sqlite3.Connection, alert: VipAlert) -> int:
+    cur = conn.execute(
+        "INSERT INTO vip_alerts (event_id, attendee_id, attendee_name, company, "
+        "arrived_at, delivered) VALUES (?,?,?,?,?,?)",
+        (alert.event_id, alert.attendee_id, alert.attendee_name, alert.company,
+         alert.arrived_at, int(bool(alert.delivered))),
+    )
+    return int(cur.lastrowid)
+
+
+def vip_alerts(conn: sqlite3.Connection, event_id: int) -> List[VipAlert]:
+    rows = conn.execute(
+        "SELECT id, event_id, attendee_id, attendee_name, company, arrived_at, "
+        "delivered FROM vip_alerts WHERE event_id=? ORDER BY id", (event_id,)
+    ).fetchall()
+    out = []
+    for r in rows:
+        data = dict(r)
+        data["delivered"] = bool(data["delivered"])
+        out.append(VipAlert(**data))
+    return out
+
+
+def get_attendee_by_email(conn: sqlite3.Connection, event_id: int,
+                          email: str) -> Optional[Attendee]:
+    """Find an invitee by email within one event.
+
+    Erased people have no email, so they are structurally unfindable here —
+    which is the correct outcome of an erasure request.
+    """
+    row = conn.execute(
+        "SELECT * FROM attendees WHERE event_id=? AND email IS NOT NULL "
+        "AND lower(email)=lower(?) AND erased_at IS NULL",
+        (event_id, email.strip()),
+    ).fetchone()
+    return _row_to_attendee(row) if row else None

@@ -36,6 +36,9 @@ from app.features.url_fetch import fetch_url
 from app.features.url_guard import UnsafeUrlError, assert_fetchable
 from app.features.qr_checkin import (
     STATE_ALREADY,
+    STATE_VALID,
+    check_in_by_email,
+    register_walk_in,
     STATE_TAMPERED,
     STATE_VALID,
     check_in,
@@ -579,7 +582,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     # ── check-in (day-of operation) ──────────────────────────────────────────
 
     def _checkin_page(request: Request, conn, event_id: int, event,
-                      scan_state: Optional[str] = None, scan_name: str = ""):
+                      scan_state: Optional[str] = None, scan_name: str = "",
+                      attendee=None, problem: str = ""):
+        # A VIP banner only on a NEW arrival: re-announcing on a repeat scan
+        # would train the desk to ignore it.
+        vip = bool(attendee and attendee.is_vip and scan_state == STATE_VALID)
         return templates.TemplateResponse(request, "checkin.html", {
             "event": event,
             "steps": nav_steps(conn, event_id, "checkin"),
@@ -587,6 +594,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "attendees": repo.list_attendees(conn, event_id),
             "scan_state": scan_state,
             "scan_name": scan_name,
+            "scan_vip": vip,
+            "scan_company": getattr(attendee, "company", None) if vip else None,
+            "problem": problem,
         })
 
     @app.get("/events/{event_id}/checkin", response_class=HTMLResponse)
@@ -613,20 +623,55 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             conn.commit()
             name = attendee.full_name if attendee else ""
             return _checkin_page(request, conn, event_id, event,
-                                 scan_state=state, scan_name=name)
+                                 scan_state=state, scan_name=name,
+                                 attendee=attendee)
         finally:
             conn.close()
 
-    @app.post("/events/{event_id}/checkin/walkin")
-    def checkin_walkin(event_id: int, full_name: str = Form(...)):
+    @app.post("/events/{event_id}/checkin/email", response_class=HTMLResponse)
+    def checkin_email(request: Request, event_id: int, email: str = Form("")):
+        """Check in an invited guest who arrived without their code."""
         conn = connect()
         try:
-            load_event(conn, event_id)
-            self_check_in(conn, event_id, full_name)
+            event = load_event(conn, event_id)
+            try:
+                state, attendee = check_in_by_email(conn, event_id, email)
+            except ValueError as exc:
+                return _checkin_page(request, conn, event_id, event,
+                                     problem=str(exc))
             conn.commit()
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=state,
+                                 scan_name=attendee.full_name if attendee else "",
+                                 attendee=attendee)
         finally:
             conn.close()
-        return RedirectResponse(f"/events/{event_id}/checkin", status_code=303)
+
+    @app.post("/events/{event_id}/checkin/walkin", response_class=HTMLResponse)
+    def checkin_walkin(request: Request, event_id: int,
+                       full_name: str = Form(""), email: str = Form(""),
+                       title: str = Form(""), company: str = Form(""),
+                       is_vip: str = Form("")):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                attendee = register_walk_in(
+                    conn, event_id, full_name=full_name, email=email,
+                    title=title, company=company,
+                    is_vip=is_vip.strip() not in ("", "0", "false"))
+            except ValueError as exc:
+                # Render the desk with the reason rather than a raw 400: the
+                # person is standing there and the operator needs to fix it now.
+                return _checkin_page(request, conn, event_id, event,
+                                     problem=str(exc))
+            conn.commit()
+            return _checkin_page(request, conn, event_id, event,
+                                 scan_state=STATE_VALID,
+                                 scan_name=attendee.full_name or "",
+                                 attendee=attendee)
+        finally:
+            conn.close()
 
     return app
 

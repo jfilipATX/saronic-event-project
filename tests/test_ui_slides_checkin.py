@@ -100,9 +100,20 @@ class TestCheckinScreen:
             assert "scan-tampered" in r.text
 
     def test_walk_in_can_self_add(self, client, planned):
+        """A walk-in now requires all four fields (P2-5)."""
+        r = client.post(f"/events/{planned}/checkin/walkin",
+                        data={"full_name": "Walk In", "email": "walk@example.com",
+                              "title": "Analyst", "company": "Acme"},
+                        follow_redirects=True)
+        assert "Walk In" in r.text
+
+    def test_an_incomplete_walk_in_is_refused_with_a_reason(self, client, planned):
+        """The guest is standing there — the desk needs the reason, not a 400."""
         r = client.post(f"/events/{planned}/checkin/walkin",
                         data={"full_name": "Walk In"}, follow_redirects=True)
-        assert "Walk In" in r.text
+        assert r.status_code == 200
+        assert "email" in r.text.lower()
+        assert "Walk In" not in r.text.replace("Walk-in", "")
 
     def test_roster_distinguishes_verified_from_walk_in(self, client, planned):
         import app.main as main_mod
