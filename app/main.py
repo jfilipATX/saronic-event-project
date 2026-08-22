@@ -27,12 +27,37 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Attendee, EventVariable
+from app.db.models import Attendee, EventVariable, Segment, Staff
 from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
 from app.features.visuals import VisualRequest, render_all, strip_exif
+from app.features.venue_scrape import (
+    AMENITIES,
+    AMENITY_LABELS,
+    build_venue_options as build_scraped_options,
+    extract_venue,
+    venue_from_facts,
+)
+from app.features.run_of_show import (
+    DEFAULT_TRACKS,
+    KIND_LABELS,
+    SEGMENT_KINDS,
+    board_lanes,
+    board_width_px,
+    conflicts_for,
+    hour_ticks,
+    group_by_day,
+    now_line_pct,
+    seed_standard_day,
+    validate_segment,
+)
+from app.features.schedule import (
+    describe_window,
+    parse_window,
+    window_for_event,
+)
 from app.features.roster_import import (
     MAPPABLE_FIELDS,
     apply_roster,
@@ -57,11 +82,24 @@ from app.features.workflow import CHAIN, CoordinatorWorkflow
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
 #: Stepper labels for the nav. Chain steps first, then the derived views.
+#: Nav entries served from /events/{id}/{key}, NOT from the decision chain.
+#: This MUST list every non-chain entry in _NAV. An entry missing here silently
+#: receives a /steps/{key} URL, which route-mismatches into another page and
+#: still returns 200 - the af5227f bug, which a merge reintroduced for
+#: "schedule" because the two edits touched the same line from different
+#: branches. Derived below rather than hand-listed so they cannot drift again.
+_CHAIN_KEYS = set(CHAIN)
+
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("slides", "Slides"), ("visuals", "Visuals"), ("invites", "Invitations"),
+    + [("schedule", "Schedule"), ("run-of-show", "Run of show"),
+       ("slides", "Slides"), ("visuals", "Visuals"),
+       ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
+
+#: (key, label) pairs for the manual amenity form.
+AMENITY_DEFAULTS = [(k, AMENITY_LABELS[k]) for k in AMENITIES]
 
 #: Set by create_app so helpers/tests can reach the active database.
 CURRENT_DB = "events.db"
@@ -184,7 +222,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
-            elif key in ("slides", "visuals", "checkin", "invites"):
+            elif key not in _CHAIN_KEYS:
+                # Anything that is not a decision-chain step is a derived view
+                # at /events/{id}/{key}. Deriving this from CHAIN rather than
+                # listing keys means adding a nav entry cannot silently produce
+                # a broken /steps/ link.
                 state = "active" if current == key else "todo"
                 url = f"/events/{event_id}/{key}"
             else:
@@ -348,9 +390,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             raise HTTPException(status_code=400,
                                 detail="An event needs a name and a city.")
 
+        try:
+            window = parse_window(form.get("starts_at") or "",
+                                  form.get("ends_at") or "")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
         conn = connect()
         try:
             event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
+            if window.is_set:
+                repo.set_event_window(conn, event_id, window)
             source_url = (form.get("source_url") or "").strip()
             # A URL supplied here (rather than via /events/scrape) was never
             # fetched. Silently dropping it is the worst answer: the coordinator
@@ -482,6 +532,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "event_id": event_id,
                 "markdown_url": f"/events/{event_id}/playbook.md",
                 "claude_spend": repo.spend_total(conn, event_id=event_id),
+                "schedule": describe_window(window_for_event(conn, event_id)),
             })
         finally:
             conn.close()
@@ -596,6 +647,283 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    # ── venue opt-out (P4-2) ─────────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/opt-out")
+    def venue_opt_out(event_id: int, host_event: str = Form("")):
+        """Record that the venue is established by a host event, not chosen."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                CoordinatorWorkflow(conn).opt_out_of_venue(
+                    event_id, host_event=host_event)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
+
+    # ── add a venue by URL (P4-1) ────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/scrape", response_class=HTMLResponse)
+    def venue_scrape(request: Request, event_id: int, venue_url: str = Form("")):
+        """Read a venue's own page and PROPOSE it. Adds nothing on its own."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            url = (venue_url or "").strip()
+            options, problem, facts = [], "", {}
+            try:
+                result = fetch_url(url)
+            except UnsafeUrlError as exc:
+                problem = (f"Could not fetch that URL safely ({exc}). Add the "
+                           f"venue manually below.")
+            except FetchError as exc:
+                problem = (f"That page could not be read ({exc}). Add the venue "
+                           f"manually below.")
+            else:
+                facts = extract_venue(_scrape_client(conn), result.text,
+                                      source_url=result.final_url,
+                                      event_id=event_id)
+                options = build_scraped_options(facts, result.final_url)
+                if not facts.get("venue_name"):
+                    problem = ("Nothing usable could be read from that page. "
+                               "Add the venue manually below.")
+            return templates.TemplateResponse(request, "venue_add.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "options": options,
+                "source_url": url,
+                "problem": problem,
+                "amenity_defaults": AMENITY_DEFAULTS,
+            })
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/venues/add", response_class=HTMLResponse)
+    def venue_add_form(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return templates.TemplateResponse(request, "venue_add.html", {
+                "event": load_event(conn, event_id),
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+                "options": [], "source_url": "", "problem": "",
+                "amenity_defaults": AMENITY_DEFAULTS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/venues/add")
+    async def venue_add(request: Request, event_id: int):
+        """Confirm the proposals and add the venue to this event's slate."""
+        form = await request.form()
+        facts = {k: v for k, v in form.items() if v}
+        amenities = {k[len("amenity_"):]: v for k, v in form.items()
+                     if k.startswith("amenity_")}
+        facts["amenities"] = amenities
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                venue = venue_from_facts(facts, facts.get("source_url", ""))
+            except ValueError as exc:
+                return templates.TemplateResponse(request, "venue_add.html", {
+                    "event": event,
+                    "steps": nav_steps(conn, event_id, "venue"),
+                    "event_id": event_id, "options": [],
+                    "source_url": facts.get("source_url", ""),
+                    "problem": str(exc),
+                    "amenity_defaults": AMENITY_DEFAULTS,
+                }, status_code=400)
+            repo.add_custom_venue(conn, event_id, venue)
+            # Re-stage so the new venue is rated and sorted with the rest.
+            CoordinatorWorkflow(conn).restage_venue(event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
+
+    # ── run of show (P4-4) ───────────────────────────────────────────────────
+
+    def _run_of_show_page(request: Request, conn, event_id: int, event,
+                          problem: str = "", form=None, view: str = "list"):
+        segments = repo.list_segments(conn, event_id)
+        staff = repo.list_staff(conn, event_id, include_erased=True)
+        window = window_for_event(conn, event_id)
+        flags = conflicts_for(segments)
+        return templates.TemplateResponse(request, "run_of_show.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "run-of-show"),
+            "event_id": event_id,
+            "segments": segments,
+            "days": group_by_day(segments),
+            "lanes": board_lanes(segments, window, flags=flags),
+            "ticks": hour_ticks(window),
+            "board_px": board_width_px(window),
+            "now_pct": now_line_pct(window),
+            "flags": flags,
+            "staff": [p for p in staff if not p.is_erased],
+            "staff_by_id": {p.id: p for p in staff},
+            "tracks": sorted({s.track for s in segments} | set(DEFAULT_TRACKS)),
+            "kinds": [(k, KIND_LABELS[k]) for k in SEGMENT_KINDS],
+            "window": window,
+            "schedule_text": describe_window(window),
+            "view": view,
+            "problem": problem,
+            "form": form or {},
+        })
+
+    @app.get("/events/{event_id}/run-of-show", response_class=HTMLResponse)
+    def run_of_show_view(request: Request, event_id: int, view: str = "list"):
+        conn = connect()
+        try:
+            return _run_of_show_page(request, conn, event_id,
+                                     load_event(conn, event_id), view=view)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/run-of-show/staff")
+    def run_of_show_add_staff(event_id: int, name: str = Form(""),
+                              role: str = Form("")):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                repo.add_staff(conn, Staff(event_id=event_id, name=name,
+                                           role=role))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/staff/{staff_id}/erase")
+    def run_of_show_erase_staff(event_id: int, staff_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                repo.erase_staff(conn, staff_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/seed")
+    def run_of_show_seed(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                seed_standard_day(conn, event_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/segments", response_class=HTMLResponse)
+    async def run_of_show_add_segment(request: Request, event_id: int):
+        form = await request.form()
+        typed = {k: v for k, v in form.items()}
+        owners = [int(v) for v in form.getlist("owners") if str(v).isdigit()]
+        segment = Segment(
+            event_id=event_id,
+            title=str(form.get("title") or ""),
+            start=str(form.get("start") or ""),
+            end=str(form.get("end") or ""),
+            track=str(form.get("track") or "Logistics"),
+            kind=str(form.get("kind") or "logistics"),
+            location=str(form.get("location") or "") or None,
+            notes=str(form.get("notes") or "") or None,
+            owner_ids=owners,
+        )
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                validate_segment(segment)
+            except ValueError as exc:
+                # Sticky: re-render with what was typed rather than an empty
+                # form (walk-in precedent).
+                return _run_of_show_page(request, conn, event_id, event,
+                                         problem=str(exc), form=typed)
+            segment_id = str(form.get("segment_id") or "")
+            if segment_id.isdigit():
+                segment.id = int(segment_id)
+                repo.update_segment(conn, segment)
+            else:
+                repo.add_segment(conn, segment)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/segments/{segment_id}/delete")
+    def run_of_show_delete_segment(event_id: int, segment_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.delete_segment(conn, segment_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    # ── event schedule (P4-3) ────────────────────────────────────────────────
+
+    def _schedule_page(request: Request, conn, event_id: int, event,
+                       problem: str = ""):
+        window = window_for_event(conn, event_id)
+        return templates.TemplateResponse(request, "schedule.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, None),
+            "event_id": event_id,
+            "window": window,
+            "description": describe_window(window),
+            "problem": problem,
+        })
+
+    @app.get("/events/{event_id}/schedule", response_class=HTMLResponse)
+    def schedule_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _schedule_page(request, conn, event_id, load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/schedule", response_class=HTMLResponse)
+    def schedule_set(request: Request, event_id: int,
+                     starts_at: str = Form(""), ends_at: str = Form("")):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                window = parse_window(starts_at, ends_at)
+            except ValueError as exc:
+                # Re-render with the reason and the EXISTING window intact: a
+                # rejected edit must never destroy a schedule that was correct.
+                return _schedule_page(request, conn, event_id, event,
+                                      problem=str(exc))
+            repo.set_event_window(conn, event_id, window)
+            conn.commit()
+            return _schedule_page(request, conn, event_id, event)
         finally:
             conn.close()
 

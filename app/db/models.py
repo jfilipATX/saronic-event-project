@@ -17,6 +17,9 @@ class Event:
     city: Optional[str] = None
     audience_estimate: Optional[int] = None
     event_type: Optional[str] = None
+    #: P4-3 event window. Optional: "not scheduled yet" is a real state.
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
     created_at: Optional[str] = None
 
 
@@ -62,6 +65,54 @@ class EventVariable:
     kind: str = ""
     value: str = ""
     notes: Optional[str] = None
+
+
+@dataclass
+class Staff:
+    """A person who owns part of the run of show (P4-4).
+
+    PII-scoped exactly like Attendee: erasure anonymises rather than deletes,
+    because who was on shift is a safety record.
+    """
+
+    id: Optional[int] = None
+    event_id: int = 0
+    name: Optional[str] = None
+    role: Optional[str] = None
+    erased_at: Optional[str] = None
+
+    @property
+    def is_erased(self) -> bool:
+        return self.erased_at is not None
+
+    @property
+    def display_name(self) -> str:
+        # Explicit placeholder, never a blank: a blank name reads as a data bug
+        # someone will try to "fix", while this reads as a deliberate erasure.
+        return "[removed]" if self.is_erased else (self.name or "")
+
+
+@dataclass
+class Segment:
+    """One block of the run of show (P4-4).
+
+    Operational data, not a chain decision: edited freely like the roster. The
+    playbook embeds the current version rather than a decision history, because
+    decision-level granularity here would bury the real decisions in noise.
+    """
+
+    id: Optional[int] = None
+    event_id: int = 0
+    title: str = ""
+    start: str = ""
+    end: str = ""
+    track: str = "Logistics"
+    kind: str = "logistics"
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    owner_ids: List[int] = field(default_factory=list)
+    #: Set by the day grouping when a segment began on an earlier day.
+    continues_from_previous: bool = False
 
 
 @dataclass

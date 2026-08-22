@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS events (
     city          TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     audience_estimate INTEGER,
-    event_type    TEXT
+    event_type    TEXT,
+    starts_at     TEXT,
+    ends_at       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS attendees (
@@ -71,6 +73,48 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     notes      TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS staff (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    name       TEXT,
+    role       TEXT,
+    erased_at  TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_event ON staff(event_id);
+
+CREATE TABLE IF NOT EXISTS segments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    title      TEXT NOT NULL,
+    start      TEXT NOT NULL,
+    end        TEXT NOT NULL,
+    track      TEXT NOT NULL DEFAULT 'Logistics',
+    kind       TEXT NOT NULL DEFAULT 'logistics',
+    location   TEXT,
+    notes      TEXT,
+    owners_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_segments_event ON segments(event_id, start);
+
+CREATE TABLE IF NOT EXISTS custom_venues (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    venue_ref  TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    city       TEXT,
+    capacity   INTEGER NOT NULL,
+    website    TEXT,
+    notes      TEXT,
+    source_url TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_venues_event ON custom_venues(event_id);
 
 CREATE TABLE IF NOT EXISTS spend_log (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

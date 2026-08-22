@@ -1,0 +1,199 @@
+<!-- run_of_show.html — chronological document + concurrency board (P4-4).
+     Context: event, event_id, segments, days, lanes, now_pct, flags, staff,
+     staff_by_id, tracks, kinds, window, schedule_text, view, problem, form. -->
+{% extends "base.html" %}
+{% block title %}Run of show — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Day of</p>
+  <h1>Run of show</h1>
+  <p class="muted no-print">{{ schedule_text }}</p>
+
+  {% if not window.is_set %}
+    <div class="pending-note no-print">
+      <p><strong>This event has no dates yet.</strong></p>
+      <p class="muted">The run of show is built on the event window — segments
+      need a day to sit on, and the board needs a time axis.</p>
+      <a class="btn-quiet" href="/events/{{ event_id }}/schedule">Set the schedule</a>
+    </div>
+  {% endif %}
+
+  {% if problem %}
+    <div class="pending-note no-print">
+      <p><strong>Not saved.</strong> {{ problem }}</p>
+      <p class="muted">Nothing changed — what you typed is kept below.</p>
+    </div>
+  {% endif %}
+
+  <p class="no-print">
+    <a class="btn-quiet {% if view != 'board' %}is-active{% endif %}"
+       href="/events/{{ event_id }}/run-of-show">Run of show</a>
+    <a class="btn-quiet {% if view == 'board' %}is-active{% endif %}"
+       href="/events/{{ event_id }}/run-of-show?view=board">Concurrency board</a>
+  </p>
+
+  {% if not segments %}
+    <div class="pending-note">
+      <p><strong>No run of show yet.</strong> Add the first segment — load-in is
+      usually where it starts.</p>
+      {% if window.is_set %}
+        <form method="post" action="/events/{{ event_id }}/run-of-show/seed">
+          <button class="btn-quiet" type="submit">Seed a standard day</button>
+        </form>
+      {% endif %}
+    </div>
+  {% elif view == 'board' %}
+
+    <h2>Concurrency board</h2>
+    <p class="muted no-print">Lanes are tracks; time runs left to right across
+    the event window. Overlapping work is the point — a person on two blocks at
+    once is flagged, not blocked.</p>
+    <div class="board-scroll">
+      <div class="board-inner" style="width: {{ board_px }}px">
+        <div class="board-ticks">
+          {% for tick in ticks %}
+            <span class="board-tick{% if tick.is_day_start %} is-day{% endif %}"
+                  style="left: {{ tick.left_px }}px">
+              <span class="board-tick-label">{{ tick.label }}</span>
+              {% if tick.is_day_start %}
+                <span class="board-tick-date">{{ tick.date_label }}</span>
+              {% endif %}
+            </span>
+          {% endfor %}
+        </div>
+        {% for lane in lanes %}
+          <div class="board-lane">
+            <span class="board-lane-label">{{ lane.track }}</span>
+            <div class="board-track">
+              {% for tick in ticks %}
+                <span class="board-gridline{% if tick.is_day_start %} is-day{% endif %}"
+                      style="left: {{ tick.left_px }}px"></span>
+              {% endfor %}
+              {% if now_pct is not none %}
+                <span class="board-now" style="left: {{ now_pct }}%"></span>
+              {% endif %}
+              {% for block in lane.blocks %}
+                {% set seg = block.segment %}
+                <div class="board-block kind-{{ seg.kind }}{% if block.has_conflict %} owner-clash-block{% endif %}"
+                     style="left: {{ block.left_px }}px; width: {{ block.width_px }}px"
+                     title="{{ seg.title }} — {{ seg.start[11:] }} to {{ seg.end[11:] }}{% if block.conflict_detail %} — shared owner: {{ block.conflict_detail }}{% endif %}">
+                  <span class="board-block-title">{{ seg.title }}</span>
+                  {% if block.show_conflict_label %}
+                    <span class="clash-note">&#9888; shared owner</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  {% else %}
+
+    {% for day, day_segments in days.items() %}
+      <h2>{{ day }}</h2>
+      <div class="card-surface">
+        {% for seg in day_segments %}
+          <div class="ros-row kind-{{ seg.kind }}">
+            <p class="ros-time">
+              {{ seg.start[11:] }} – {{ seg.end[11:] }}
+              {% if seg.continues_from_previous %}
+                <span class="muted">(continues from {{ seg.start[:10] }})</span>
+              {% endif %}
+            </p>
+            <p class="ros-title"><strong>{{ seg.title }}</strong>
+              <span class="muted">{{ seg.location or '' }}</span></p>
+            <p>
+              {% for owner_id in seg.owner_ids %}
+                {% set person = staff_by_id.get(owner_id) %}
+                {% if person %}
+                  {% set clash = flags.get(seg.id, {}).get(owner_id) %}
+                  <span class="owner-chip{% if clash %} owner-clash{% endif %}">
+                    {{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}
+                  </span>
+                  {% if clash %}
+                    <span class="clash-note">{{ clash }}</span>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </p>
+            {% if seg.notes %}<p class="muted">{{ seg.notes }}</p>{% endif %}
+            {% if not seg.continues_from_previous %}
+              <form class="no-print" method="post"
+                    action="/events/{{ event_id }}/run-of-show/segments/{{ seg.id }}/delete">
+                <button class="btn-quiet" type="submit">Remove</button>
+              </form>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+
+  {% endif %}
+
+  <div class="no-print">
+    <h2>Add a segment</h2>
+    <form method="post" action="/events/{{ event_id }}/run-of-show/segments">
+      <div class="field-grid">
+        <label for="ros-title">Title</label>
+        <input class="input" id="ros-title" type="text" name="title"
+               value="{{ form.title or '' }}" required>
+
+        <label for="ros-start">Starts</label>
+        <input class="input" id="ros-start" type="datetime-local" name="start"
+               value="{{ form.start or window.start or '' }}" required>
+
+        <label for="ros-end">Ends</label>
+        <input class="input" id="ros-end" type="datetime-local" name="end"
+               value="{{ form.end or '' }}" required>
+
+        <label for="ros-track">Track</label>
+        <select class="input" id="ros-track" name="track">
+          {% for track in tracks %}
+            <option value="{{ track }}" {% if form.track == track %}selected{% endif %}>{{ track }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="ros-kind">Kind</label>
+        <select class="input" id="ros-kind" name="kind">
+          {% for key, label in kinds %}
+            <option value="{{ key }}" {% if form.kind == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+
+        <label for="ros-location">Location</label>
+        <input class="input" id="ros-location" type="text" name="location"
+               placeholder="Loading dock B" value="{{ form.location or '' }}">
+
+        <label for="ros-owners">Owners</label>
+        <select class="input" id="ros-owners" name="owners" multiple size="4">
+          {% for person in staff %}
+            <option value="{{ person.id }}">{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</option>
+          {% endfor %}
+        </select>
+
+        <label for="ros-notes">Notes</label>
+        <input class="input" id="ros-notes" type="text" name="notes"
+               value="{{ form.notes or '' }}">
+      </div>
+      <button class="btn-primary" type="submit">Add segment</button>
+    </form>
+
+    <h2>Staff</h2>
+    {% if staff %}
+      <p>
+        {% for person in staff %}
+          <span class="owner-chip">{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</span>
+        {% endfor %}
+      </p>
+    {% else %}
+      <p class="muted">No staff yet — add the people who own parts of the day.</p>
+    {% endif %}
+    <form method="post" action="/events/{{ event_id }}/run-of-show/staff"
+          class="form-row">
+      <input class="input" type="text" name="name" placeholder="Name" required>
+      <input class="input" type="text" name="role" placeholder="Role">
+      <button class="btn-quiet" type="submit">Add staff</button>
+    </form>
+  </div>
+{% endblock %}

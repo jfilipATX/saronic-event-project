@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
 
 from app.db.models import (
-    Attendee, Decision, DecisionOption, Event, EventVariable, SpendEntry,
+    Attendee, Decision, DecisionOption, Event, EventVariable, Segment,
+    SpendEntry, Staff,
     VenueUse, VipAlert,
 )
 from app.db import schema_sql_text as _sql
@@ -195,6 +196,8 @@ _ADDED_COLUMNS = (
     ("attendees", "title", "TEXT"),
     ("attendees", "company", "TEXT"),
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
+    ("events", "starts_at", "TEXT"),
+    ("events", "ends_at", "TEXT"),
 )
 
 #: Tables added after the first release. CREATE TABLE IF NOT EXISTS in SCHEMA
@@ -522,3 +525,162 @@ def spend_by_surface(conn: sqlite3.Connection,
     sql_text += " GROUP BY surface"
     return {r[0]: round(float(r[1]), 4)
             for r in conn.execute(sql_text, params).fetchall()}
+
+
+def set_event_window(conn: sqlite3.Connection, event_id: int, window) -> None:
+    """Store an event's start/end. Pass a cleared window to unschedule."""
+    conn.execute("UPDATE events SET starts_at=?, ends_at=? WHERE id=?",
+                 (window.start, window.end, event_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P4-1 — coordinator-added venues (scraped from a URL)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def add_custom_venue(conn: sqlite3.Connection, event_id: int, venue) -> int:
+    cur = conn.execute(
+        "INSERT INTO custom_venues (event_id, venue_ref, name, city, capacity, "
+        "website, notes, source_url) VALUES (?,?,?,?,?,?,?,?)",
+        (event_id, venue.venue_ref, venue.name, venue.city, venue.capacity,
+         venue.website, venue.notes, venue.website),
+    )
+    return int(cur.lastrowid)
+
+
+def custom_venues(conn: sqlite3.Connection, event_id: int) -> List:
+    from app.providers.base import Venue
+
+    rows = conn.execute(
+        "SELECT * FROM custom_venues WHERE event_id=? ORDER BY id", (event_id,)
+    ).fetchall()
+    return [
+        Venue(name=r["name"], city=r["city"] or "", capacity=r["capacity"],
+              rating=0.0, notes=r["notes"] or "", website=r["website"],
+              venue_ref=r["venue_ref"])
+        for r in rows
+    ]
+
+
+def replace_options(conn: sqlite3.Connection, decision_id: int,
+                    options: List[DecisionOption]) -> None:
+    """Rewrite an UNANSWERED decision's slate.
+
+    Only valid before a choice is recorded: rewriting the options of an answered
+    decision would break the audit trail's promise that the stored slate is what
+    the coordinator was actually shown.
+    """
+    row = conn.execute("SELECT chosen_key FROM decisions WHERE id=?",
+                       (decision_id,)).fetchone()
+    if row is not None and row["chosen_key"]:
+        raise ValueError(
+            f"Decision {decision_id} is already answered; its options are part "
+            f"of the record and cannot be rewritten."
+        )
+    conn.execute("UPDATE decisions SET options_json=? WHERE id=?",
+                 (_dump_options(options), decision_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P4-4 — staff and run-of-show segments
+#
+# Segments are operational data, edited freely like the roster rather than
+# staged/chosen/revised. Staff are PII-scoped like attendees: erasure
+# anonymises, because who was on shift is a safety record.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def add_staff(conn: sqlite3.Connection, person: Staff) -> int:
+    name = (person.name or "").strip()
+    if not name:
+        raise ValueError("A staff member needs a name.")
+    cur = conn.execute(
+        "INSERT INTO staff (event_id, name, role) VALUES (?,?,?)",
+        (person.event_id, name, (person.role or "").strip() or None),
+    )
+    return int(cur.lastrowid)
+
+
+def _row_to_staff(row) -> Staff:
+    return Staff(id=row["id"], event_id=row["event_id"], name=row["name"],
+                 role=row["role"], erased_at=row["erased_at"])
+
+
+def list_staff(conn: sqlite3.Connection, event_id: int,
+               include_erased: bool = False) -> List[Staff]:
+    sql_text = "SELECT * FROM staff WHERE event_id=?"
+    if not include_erased:
+        sql_text += " AND erased_at IS NULL"
+    sql_text += " ORDER BY id"
+    return [_row_to_staff(r) for r in conn.execute(sql_text, (event_id,))]
+
+
+def get_staff(conn: sqlite3.Connection, staff_id: int) -> Optional[Staff]:
+    row = conn.execute("SELECT * FROM staff WHERE id=?", (staff_id,)).fetchone()
+    return _row_to_staff(row) if row else None
+
+
+def erase_staff(conn: sqlite3.Connection, staff_id: int) -> None:
+    """Destroy the person's identity, keep the record that a shift was covered.
+
+    Irreversible by design, and refuses a second attempt so a caller cannot
+    mistake 'already erased' for 'erased just now'.
+    """
+    person = get_staff(conn, staff_id)
+    if person is None:
+        raise ValueError(f"No staff member {staff_id}.")
+    if person.is_erased:
+        raise ValueError(f"Staff member {staff_id} was already erased.")
+    conn.execute(
+        "UPDATE staff SET name=NULL, role=NULL, erased_at=? WHERE id=?",
+        (_now(), staff_id),
+    )
+
+
+def add_segment(conn: sqlite3.Connection, segment: Segment) -> int:
+    cur = conn.execute(
+        "INSERT INTO segments (event_id, title, start, end, track, kind, "
+        "location, notes, owners_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        (segment.event_id, segment.title, segment.start, segment.end,
+         segment.track, segment.kind, segment.location, segment.notes,
+         json.dumps(list(segment.owner_ids))),
+    )
+    return int(cur.lastrowid)
+
+
+def _row_to_segment(row) -> Segment:
+    try:
+        owners = json.loads(row["owners_json"] or "[]")
+    except (ValueError, TypeError):
+        owners = []
+    return Segment(
+        id=row["id"], event_id=row["event_id"], title=row["title"],
+        start=row["start"], end=row["end"], track=row["track"],
+        kind=row["kind"], location=row["location"], notes=row["notes"],
+        owner_ids=[int(o) for o in owners],
+    )
+
+
+def list_segments(conn: sqlite3.Connection, event_id: int) -> List[Segment]:
+    return [_row_to_segment(r) for r in conn.execute(
+        "SELECT * FROM segments WHERE event_id=? ORDER BY start, id", (event_id,))]
+
+
+def get_segment(conn: sqlite3.Connection, segment_id: int) -> Optional[Segment]:
+    row = conn.execute("SELECT * FROM segments WHERE id=?",
+                       (segment_id,)).fetchone()
+    return _row_to_segment(row) if row else None
+
+
+def update_segment(conn: sqlite3.Connection, segment: Segment) -> None:
+    conn.execute(
+        "UPDATE segments SET title=?, start=?, end=?, track=?, kind=?, "
+        "location=?, notes=?, owners_json=? WHERE id=?",
+        (segment.title, segment.start, segment.end, segment.track,
+         segment.kind, segment.location, segment.notes,
+         json.dumps(list(segment.owner_ids)), segment.id),
+    )
+
+
+def delete_segment(conn: sqlite3.Connection, segment_id: int) -> None:
+    conn.execute("DELETE FROM segments WHERE id=?", (segment_id,))

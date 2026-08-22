@@ -1,0 +1,108 @@
+<!-- venue_add.html — add a venue by URL, confirm what was read (P4-1).
+     Context: event, event_id, options, source_url, problem. -->
+{% extends "base.html" %}
+{% block title %}Add a venue — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Venue</p>
+  <h1>Add a venue</h1>
+
+  <p class="muted">
+    Paste the venue's own page and we'll read what it states — capacity,
+    address, and which amenities it offers. Everything comes back as a
+    proposal you confirm or correct; nothing is added until you do.
+  </p>
+
+  <form method="post" action="/events/{{ event_id }}/venues/scrape" class="form-row">
+    <input class="input" type="url" name="venue_url"
+           placeholder="https://venue.example.com" value="{{ source_url }}">
+    <button class="btn-primary" type="submit">Read this page</button>
+  </form>
+
+  {% if problem %}
+    <div class="pending-note">
+      <p><strong>{{ problem }}</strong></p>
+      <p class="muted">Nothing was added — fill in what you know below.</p>
+    </div>
+  {% endif %}
+
+  {% if options %}
+    <h2>Confirm what we read</h2>
+    <p class="muted">
+      Correct anything that looks wrong. A venue page can be out of date, and a
+      wrong capacity misreads every fit badge that follows.
+    </p>
+  {% else %}
+    <h2>Venue details</h2>
+  {% endif %}
+
+  <form method="post" action="/events/{{ event_id }}/venues/add">
+    <input type="hidden" name="source_url" value="{{ source_url }}">
+
+    {% set fields = options | selectattr('key', 'in', ['venue_name', 'address', 'city', 'capacity', 'website']) | list %}
+    {% if fields %}
+      {% for option in fields %}
+        <div class="form-row">
+          <label class="muted">{{ option.label }}
+            <input class="input" type="text" name="{{ option.key }}"
+                   value="{{ option.data.value }}">
+          </label>
+        </div>
+        <p class="option-reasoning">{{ option.reasoning }}</p>
+      {% endfor %}
+    {% else %}
+      <div class="form-row">
+        <label class="muted">Venue name
+          <input class="input" type="text" name="venue_name" required>
+        </label>
+        <label class="muted">City
+          <input class="input" type="text" name="city" value="{{ event.city or '' }}">
+        </label>
+      </div>
+      <div class="form-row">
+        <label class="muted">Capacity
+          <input class="input" type="number" name="capacity" min="1" required>
+        </label>
+        <label class="muted">Website
+          <input class="input" type="url" name="website">
+        </label>
+      </div>
+    {% endif %}
+
+    <h2>Amenities</h2>
+    <p class="muted">
+      "Not stated" is deliberately not "no" — it means someone still has to ask.
+    </p>
+    {% set amenities = [] %}
+    {% for option in options if option.key[:8] == 'amenity_' %}
+      {% set _ = amenities.append(option) %}
+    {% endfor %}
+    {% for option in (amenities if amenities else []) %}
+      <div class="field-grid">
+        <label for="{{ option.key }}">{{ option.label }}</label>
+        <select class="input" id="{{ option.key }}" name="{{ option.key }}">
+          <option value="yes" {% if option.data.value == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if option.data.value == 'no' %}selected{% endif %}>No</option>
+          <option value="unknown" {% if option.data.value == 'unknown' %}selected{% endif %}>Not stated</option>
+        </select>
+      </div>
+      <p class="option-reasoning">{{ option.reasoning }}</p>
+    {% endfor %}
+    {% if not amenities %}
+      <div class="field-grid">
+      {% for key, label in amenity_defaults %}
+        <label for="amenity_{{ key }}">{{ label }}</label>
+        <select class="input" id="amenity_{{ key }}" name="amenity_{{ key }}">
+          <option value="unknown" selected>Not stated</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="form-row">
+      <button class="btn-primary" type="submit">Add this venue</button>
+      <a class="btn-quiet" href="/events/{{ event_id }}/steps/venue">Back to venues</a>
+    </div>
+  </form>
+{% endblock %}

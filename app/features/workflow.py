@@ -20,10 +20,14 @@ import sqlite3
 from typing import List, Optional
 
 from app.db import repository as repo
-from app.db.models import Decision, Event
+from app.db.models import Decision, DecisionOption, Event
 from app.features.audience import build_audience_options
 from app.features.event_type import build_event_type_options
 from app.features.venue_options import build_venue_options
+
+#: The venue step's opt-out: Saronic has a booth at an existing event, so the
+#: venue is established rather than chosen.
+EXTERNAL_VENUE_KEY = "venue-external"
 from app.providers.registry import get_audience_provider, get_venue_provider
 
 #: Order of the chain; each step's options depend on the answers before it.
@@ -87,7 +91,11 @@ class CoordinatorWorkflow:
         event = repo.get_event(self.conn, event_id)
         audience = event.audience_estimate or 0
         city = event.city or ""
-        venues = self._venues.search(city, audience)
+        venues = list(self._venues.search(city, audience))
+        # Coordinator-added venues (P4-1) join the same slate: once confirmed
+        # they are venues like any other, and must be rated and sorted by the
+        # same fit rules rather than living in a separate list.
+        venues.extend(repo.custom_venues(self.conn, event_id))
         options = build_venue_options(
             venues, audience,
             favourites=repo.favourites(self.conn),
@@ -134,11 +142,19 @@ class CoordinatorWorkflow:
         option = next((o for o in decision.options if o.key == key), None)
         if option is None or not option.data.get("requires_value"):
             return None
+        # An option declares what KIND of value it wants. This defaulted to
+        # "number" when only the custom-audience option existed; the venue
+        # opt-out carries an event name, and inheriting numeric validation
+        # rejected it. Options that want text say so.
+        value_type = option.data.get("value_type", "number")
         if value is None or not str(value).strip():
             raise ValueError(
-                f"The {option.label!r} option requires a value — enter a number."
+                f"The {option.label!r} option requires a value."
             )
-        raw = str(value).strip().replace(",", "")
+        raw = str(value).strip()
+        if value_type == "text":
+            return raw
+        raw = raw.replace(",", "")
         if not raw.isdigit() or int(raw) <= 0:
             raise ValueError(
                 f"{value!r} is not a whole number of attendees above zero."
@@ -196,6 +212,70 @@ class CoordinatorWorkflow:
         self._invalidate_downstream(event_id, step)
         self._stage_next_after(event_id, step)
         return new_id
+
+    def opt_out_of_venue(self, event_id: int, host_event: str,
+                         by: str = "coordinator") -> int:
+        """Record that the venue is already established (P4-2).
+
+        Saronic has a booth at someone else's event, so there is no venue to
+        choose. This is deliberately NOT a blocked decision: blocked means we
+        looked and found nothing, which leaves an open question the playbook
+        keeps nagging about. Here the question is answered — by someone else —
+        and the chain should carry that as a recorded fact.
+
+        Implemented as a real option added to the slate, so the never-record-an-
+        unoffered-choice guard stays intact and the audit trail reads the same
+        as any other decision.
+        """
+        host = (host_event or "").strip()
+        if not host:
+            raise ValueError(
+                "Say which event we have a booth at — 'someone else's venue' is "
+                "only useful to the next person if we name it."
+            )
+        decision = self._live(event_id, "venue")
+        if decision is None:
+            self._stage_venue(event_id)
+            decision = self._live(event_id, "venue")
+
+        option = DecisionOption(
+            key=EXTERNAL_VENUE_KEY,
+            label="Venue already established",
+            reasoning=(
+                f"We have a booth at {host}, so the venue is set by the host "
+                f"event rather than chosen by us. Capacity, layout and load-in "
+                f"are theirs to confirm — ask them, do not assume."
+            ),
+            data={"requires_value": True, "value_type": "text",
+                  "host_event": host},
+        )
+        options = [o for o in decision.options if o.key != EXTERNAL_VENUE_KEY]
+        options.append(option)
+        # Re-stage with the opt-out present so the choice below is genuinely
+        # one of the offered options rather than a bypass of the guard.
+        repo.replace_options(self.conn, decision.id, options)
+        return self.choose(event_id, "venue", EXTERNAL_VENUE_KEY,
+                           by=by, value=host)
+
+    def restage_venue(self, event_id: int) -> None:
+        """Rebuild the venue slate after the pool of venues changed (P4-1).
+
+        A coordinator-added venue must be rated and sorted by the same fit rules
+        as every other option, so the slate is regenerated rather than appended
+        to. An UNANSWERED venue step is restaged in place; an answered one is
+        left alone, because silently rewriting a recorded decision's options
+        would break the audit trail's promise that the slate is what was shown.
+        """
+        decision = self._live(event_id, "venue")
+        if decision is not None and decision.chosen_key:
+            return
+        if decision is not None:
+            # Withdraw rather than delete — same as the city-revision path. The
+            # log should still show the slate the coordinator was looking at
+            # before they added a venue of their own.
+            self.conn.execute("UPDATE decisions SET superseded_by=id WHERE id=?",
+                              (decision.id,))
+        self._stage_venue(event_id)
 
     def _invalidate_downstream(self, event_id: int, step: str) -> None:
         """Drop later answers: they were computed against a premise that changed."""

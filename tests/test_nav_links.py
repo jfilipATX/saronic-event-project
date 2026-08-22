@@ -65,9 +65,14 @@ class TestEveryStepperLinkResolves:
         html = client.get(f"/events/{event_id}/steps/event_type").text
         stepper = re.search(r'<ul class="stepper">(.*?)</ul>', html, re.S).group(1)
         links = re.findall(r'href="([^"]+)"[^>]*>([^<]+)<', stepper)
-        derived = {"Slides": "slides", "Visuals": "visuals",
-                   "Invitations": "invites", "Check-in": "checkin",
-                   "Playbook": "playbook"}
+        # Derived from the app's own CHAIN rather than hand-listed. A literal
+        # dict silently SKIPS any nav entry nobody remembered to add, which is
+        # how this guard passed while the Schedule link was genuinely broken --
+        # the same shape as the bug it was written to catch.
+        from app.features.workflow import CHAIN
+        from app.main import _NAV
+
+        derived = {label: key for key, label in _NAV if key not in set(CHAIN)}
         seen = 0
         for href, label in links:
             label = label.strip()

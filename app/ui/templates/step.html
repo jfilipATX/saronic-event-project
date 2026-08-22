@@ -37,4 +37,24 @@
       {% include "partials/option_card.html" %}
     {% endfor %}
   </ul>
+  {% if step_key == 'venue' %}
+    <p class="mt-xl">
+      <a class="link-accent" href="/events/{{ event_id }}/venues/add">
+        Add a venue by URL</a>
+      — paste a venue's page and we'll read its capacity and amenities.
+    </p>
+    {% if chosen_key != 'venue-external' %}
+      <div class="card-surface">
+        <p class="muted"><strong>Already have a venue?</strong>
+        If Saronic has a booth at an existing event, the venue is set by the
+        host — record that instead of choosing one.</p>
+        <form method="post" action="/events/{{ event_id }}/venues/opt-out"
+              class="form-row">
+          <input class="input" type="text" name="host_event"
+                 placeholder="Which event? e.g. Sea-Air-Space 2026" required>
+          <button class="btn-quiet" type="submit">Venue is already established</button>
+        </form>
+      </div>
+    {% endif %}
+  {% endif %}
 {% endblock %}

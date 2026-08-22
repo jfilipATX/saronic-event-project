@@ -25,6 +25,8 @@
   <form method="post" action="/events" class="form-row">
     <input class="input" type="text" name="name" placeholder="Event name" required>
     <input class="input" type="text" name="city" placeholder="City" required>
+    <input class="input" type="datetime-local" name="starts_at" title="Starts (optional)">
+    <input class="input" type="datetime-local" name="ends_at" title="Ends (optional)">
     <button class="btn-primary" type="submit">Create event</button>
   </form>
 
