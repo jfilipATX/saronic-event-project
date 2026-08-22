@@ -636,6 +636,24 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
+    # ── venue opt-out (P4-2) ─────────────────────────────────────────────────
+
+    @app.post("/events/{event_id}/venues/opt-out")
+    def venue_opt_out(event_id: int, host_event: str = Form("")):
+        """Record that the venue is established by a host event, not chosen."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                CoordinatorWorkflow(conn).opt_out_of_venue(
+                    event_id, host_event=host_event)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
+
     # ── add a venue by URL (P4-1) ────────────────────────────────────────────
 
     @app.post("/events/{event_id}/venues/scrape", response_class=HTMLResponse)

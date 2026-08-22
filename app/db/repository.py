@@ -559,3 +559,22 @@ def custom_venues(conn: sqlite3.Connection, event_id: int) -> List:
               venue_ref=r["venue_ref"])
         for r in rows
     ]
+
+
+def replace_options(conn: sqlite3.Connection, decision_id: int,
+                    options: List[DecisionOption]) -> None:
+    """Rewrite an UNANSWERED decision's slate.
+
+    Only valid before a choice is recorded: rewriting the options of an answered
+    decision would break the audit trail's promise that the stored slate is what
+    the coordinator was actually shown.
+    """
+    row = conn.execute("SELECT chosen_key FROM decisions WHERE id=?",
+                       (decision_id,)).fetchone()
+    if row is not None and row["chosen_key"]:
+        raise ValueError(
+            f"Decision {decision_id} is already answered; its options are part "
+            f"of the record and cannot be rewritten."
+        )
+    conn.execute("UPDATE decisions SET options_json=? WHERE id=?",
+                 (_dump_options(options), decision_id))
