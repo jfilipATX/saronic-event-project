@@ -56,9 +56,10 @@ def list_events(conn: sqlite3.Connection) -> List[Event]:
 def add_attendee(conn: sqlite3.Connection, attendee: Attendee) -> int:
     cur = conn.execute(
         "INSERT INTO attendees (event_id, full_name, email, checkin_code, "
-        "self_reported) VALUES (?,?,?,?,?)",
+        "self_reported, title, company, is_vip) VALUES (?,?,?,?,?,?,?,?)",
         (attendee.event_id, attendee.full_name, attendee.email,
-         attendee.checkin_code, int(bool(attendee.self_reported))),
+         attendee.checkin_code, int(bool(attendee.self_reported)),
+         attendee.title, attendee.company, int(bool(attendee.is_vip))),
     )
     return int(cur.lastrowid)
 
@@ -73,6 +74,7 @@ def _row_to_attendee(row: sqlite3.Row) -> Attendee:
     """
     data = dict(row)
     data["self_reported"] = bool(data.get("self_reported", 0))
+    data["is_vip"] = bool(data.get("is_vip", 0))
     return Attendee(**data)
 
 
@@ -189,6 +191,9 @@ _ADDED_COLUMNS = (
     ("decisions", "chosen_value", "TEXT"),
     ("attendees", "withdrawn_at", "TEXT"),
     ("attendees", "erased_at", "TEXT"),
+    ("attendees", "title", "TEXT"),
+    ("attendees", "company", "TEXT"),
+    ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

@@ -16,7 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import List, Optional
 
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -27,6 +27,11 @@ from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
+from app.features.roster_import import (
+    MAPPABLE_FIELDS,
+    apply_roster,
+    preview_csv,
+)
 from app.features.url_fetch import fetch_url
 from app.features.url_guard import UnsafeUrlError, assert_fetchable
 from app.features.qr_checkin import (
@@ -180,6 +185,78 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 url = f"/events/{event_id}/steps/{key}"
             steps.append(NavStep(key=key, label=label, url=url, state=state))
         return steps
+
+    # ── CSV roster import (P2-5) ─────────────────────────────────────────────
+
+    @app.get("/events/{event_id}/roster", response_class=HTMLResponse)
+    def roster_form(request: Request, event_id: int):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            attendees = repo.list_attendees(conn, event_id)
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": attendees,
+                "preview": None,
+                "outcome": None,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/roster/preview", response_class=HTMLResponse)
+    async def roster_preview(request: Request, event_id: int,
+                             roster: UploadFile = File(...)):
+        """Show what WOULD be imported. Writes nothing."""
+        raw = await roster.read()
+        text = raw.decode("utf-8", errors="replace")
+        preview = preview_csv(text)
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": repo.list_attendees(conn, event_id),
+                "preview": preview,
+                "csv_text": text,
+                "outcome": None,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/roster/import", response_class=HTMLResponse)
+    async def roster_commit(request: Request, event_id: int):
+        """Commit the import using the mapping the coordinator confirmed."""
+        form = await request.form()
+        text = form.get("csv_text") or ""
+        mapping = {
+            key[len("map_"):]: value
+            for key, value in form.items() if key.startswith("map_")
+        }
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                outcome = apply_roster(conn, event_id, text, mapping)
+                conn.commit()
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            return templates.TemplateResponse(request, "roster.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, None),
+                "event_id": event_id,
+                "attendees": repo.list_attendees(conn, event_id),
+                "preview": None,
+                "outcome": outcome,
+                "mappable_fields": MAPPABLE_FIELDS,
+            })
+        finally:
+            conn.close()
 
     # ── routes ───────────────────────────────────────────────────────────────
 

@@ -30,6 +30,12 @@ class Attendee:
     attended_at: Optional[str] = None
     self_reported: bool = False
     created_at: Optional[str] = None
+    #: Roster detail (P2-5). Optional: a walk-in may supply them, a QR invite
+    #: may not.
+    title: Optional[str] = None
+    company: Optional[str] = None
+    #: VIP flag — surfaced at the desk and alerted on, never used to rank.
+    is_vip: bool = False
     #: Cancelled invitee. Reversible; the name is deliberately kept.
     withdrawn_at: Optional[str] = None
     #: PII erasure. Irreversible; name/email/code are destroyed in place while

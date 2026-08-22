@@ -1,0 +1,128 @@
+<!-- roster.html — CSV roster import with a column-mapping preview.
+     Context: event, event_id, attendees, preview, csv_text, outcome. -->
+{% extends "base.html" %}
+{% block title %}Roster — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Check-in desk</p>
+  <h1>Roster</h1>
+
+  {% if outcome %}
+    <div class="pending-note">
+      <p><strong>{{ outcome.summary }}</strong></p>
+      {% if outcome.skipped %}
+        <p class="muted">These rows were left out. Everything else imported —
+        fix them in the file and re-import if you need them:</p>
+        <ul class="muted">
+          {% for row in outcome.skipped %}
+            <li>Row {{ row.line }}: {{ row.reason }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if preview %}
+    <h2>Check the columns before importing</h2>
+    {% if not preview.can_import %}
+      <div class="pending-note">
+        <p><strong>Not ready to import.</strong>
+        {% if preview.total_rows == 0 %}
+          That file has no data rows.
+        {% else %}
+          Nothing is mapped to
+          {% for f in preview.missing_required %}
+            <strong>{{ 'name' if f == 'full_name' else f }}</strong>
+            {%- if not loop.last %} and {% endif %}
+          {% endfor %}.
+          Every attendee needs both to be invited or checked in.
+        {% endif %}
+        </p>
+      </div>
+    {% endif %}
+
+    <form method="post" action="/events/{{ event_id }}/roster/import">
+      <input type="hidden" name="csv_text" value="{{ csv_text }}">
+      <div class="card-surface">
+        <table class="table">
+          <thead>
+            <tr>
+              {% for header in preview.headers %}
+                <th>
+                  <span class="table-header">{{ header }}</span>
+                  <select class="input" name="map_{{ header }}">
+                    {% for field in mappable_fields %}
+                      <option value="{{ field }}"
+                        {% if preview.mapping[header] == field %}selected{% endif %}>
+                        {{ 'Ignore this column' if field == 'ignore'
+                           else field.replace('_', ' ') | title }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview.sample_rows %}
+              <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">
+        Showing the first {{ preview.sample_rows | length }} of
+        {{ preview.total_rows }} row{{ 's' if preview.total_rows != 1 }}.
+      </p>
+      <div class="option-actions mt-xl">
+        <button class="btn-primary" type="submit"
+                {% if not preview.can_import %}disabled{% endif %}>
+          Import {{ preview.total_rows }} attendee{{ 's' if preview.total_rows != 1 }}
+        </button>
+        <a class="btn-quiet" href="/events/{{ event_id }}/roster">Choose another file</a>
+      </div>
+    </form>
+  {% else %}
+    <h2>Import a roster</h2>
+    <p class="muted">
+      Upload a CSV of invited people. You will see the columns and a sample of
+      the rows before anything is imported.
+    </p>
+    <form method="post" action="/events/{{ event_id }}/roster/preview"
+          enctype="multipart/form-data" class="form-row">
+      <input class="input" type="file" name="roster" accept=".csv,text/csv" required>
+      <button class="btn-primary" type="submit">Preview import</button>
+    </form>
+  {% endif %}
+
+  <h2>On the roster ({{ attendees | length }})</h2>
+  {% if attendees %}
+    <div class="card-surface">
+      <table class="table">
+        <thead>
+          <tr>
+            <th><span class="table-header">Name</span></th>
+            <th><span class="table-header">Email</span></th>
+            <th><span class="table-header">Title</span></th>
+            <th><span class="table-header">Company</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for person in attendees %}
+            <tr>
+              <td>{{ person.full_name }}{% if person.is_vip %}
+                <span class="fit-badge fit-vip">VIP</span>{% endif %}</td>
+              <td>{{ person.email or '—' }}</td>
+              <td>{{ person.title or '—' }}</td>
+              <td>{{ person.company or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Nobody on the roster yet.</p>
+  {% endif %}
+
+  <p class="mt-xl"><a class="link-accent"
+    href="/events/{{ event_id }}/checkin">Go to the check-in desk</a></p>
+{% endblock %}

@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS attendees (
     self_reported   INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     withdrawn_at    TEXT,
-    erased_at       TEXT
+    erased_at       TEXT,
+    title           TEXT,
+    company         TEXT,
+    is_vip          INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS event_variables (
