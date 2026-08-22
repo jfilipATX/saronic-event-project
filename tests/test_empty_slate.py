@@ -171,3 +171,53 @@ class TestUiRendersTheBlockedStep:
         page = client.get(f"/events/{eid}/steps/venue")
         assert "fit-fits" in page.text
         assert "btn-quiet" not in page.text
+
+
+class TestBlockerReachesEverySurface:
+    """A blocked step must explain itself everywhere it appears.
+
+    The playbook export was fixed in design QA; the deck slide and the
+    defensive fallback branch in compose_playbook still dropped the reason,
+    which puts an unexplained empty section in front of a room.
+    """
+
+    def test_deck_open_questions_slide_states_the_blocker(self, wf, conn):
+        from app.features.deck import build_deck
+        from app.features.images import ImageResolver
+        from app.features.playbook import compose_playbook
+
+        eid = wf.start_event(name="Launch", city=UNKNOWN_CITY)
+        wf.choose(eid, step="event_type", key="convention")
+        wf.choose(eid, step="audience", key="baseline")
+        deck = build_deck(compose_playbook(conn, eid), ImageResolver(None))
+        slide = next(s for s in deck.slides if s.kind == "open-questions")
+        assert UNKNOWN_CITY in slide.body
+        assert "blocked" in slide.body.lower()
+
+    def test_deck_markdown_outline_states_the_blocker(self, wf, conn):
+        from app.features.deck import build_deck, render_deck_markdown
+        from app.features.images import ImageResolver
+        from app.features.playbook import compose_playbook
+
+        eid = wf.start_event(name="Launch", city=UNKNOWN_CITY)
+        wf.choose(eid, step="event_type", key="convention")
+        wf.choose(eid, step="audience", key="baseline")
+        md = render_deck_markdown(build_deck(compose_playbook(conn, eid),
+                                             ImageResolver(None)))
+        assert UNKNOWN_CITY in md
+
+    def test_hand_edited_db_with_a_missing_option_still_carries_the_reason(self, conn):
+        """The defensive branch in compose_playbook must not drop blocked_reason."""
+        from app.db.models import DecisionOption, Event
+        from app.features.playbook import compose_playbook
+
+        eid = repo.create_event(conn, Event(name="E", city="Nowhere"))
+        repo.record_decision(conn, Decision(
+            event_id=eid, step="venue", question="Which venue?",
+            options=[DecisionOption("a", "A", "why")],
+            chosen_key=None, blocked_reason="No venue data for Nowhere."))
+        # Simulate corruption: a chosen key that no longer matches any option.
+        conn.execute("UPDATE decisions SET chosen_key='gone' WHERE event_id=?", (eid,))
+        pb = compose_playbook(conn, eid)
+        assert pb.open_questions
+        assert pb.open_questions[0].blocked_reason == "No venue data for Nowhere."

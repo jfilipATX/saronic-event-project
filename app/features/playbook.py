@@ -127,7 +127,8 @@ def compose_playbook(conn, event_id: int) -> Playbook:
         if chosen is None:
             open_questions.append(
                 OpenQuestion(step=d.step, title=_title_for(d.step),
-                             question=d.question, options=d.options)
+                             question=d.question, options=d.options,
+                             blocked_reason=getattr(d, "blocked_reason", "") or "")
             )
             continue
         sections.append(
