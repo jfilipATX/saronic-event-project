@@ -73,10 +73,10 @@ def build_deck(playbook: Playbook, resolver: ImageResolver,
         audience=ev.audience_estimate,
         venue=venue_label,
     )
+    # Attribution lives on the badge (copy_source), not in the note — repeating
+    # it here made the note read like projected copy rather than direction.
     title_notes = (
         "Dark overlay at 60% so title text stays AA over the hero image."
-        + (" Copy written by Claude." if copy.source == "claude"
-           else " Copy generated deterministically (Claude not in use).")
     )
     slides.append(Slide(
         kind="title",
