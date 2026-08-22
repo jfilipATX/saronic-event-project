@@ -28,7 +28,7 @@ from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
 from app.features.url_fetch import fetch_url
-from app.features.url_guard import UnsafeUrlError
+from app.features.url_guard import UnsafeUrlError, assert_fetchable
 from app.features.qr_checkin import (
     STATE_ALREADY,
     STATE_TAMPERED,
@@ -257,6 +257,20 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
             source_url = (form.get("source_url") or "").strip()
+            # A URL supplied here (rather than via /events/scrape) was never
+            # fetched. Silently dropping it is the worst answer: the coordinator
+            # reasonably believes the details were imported when nothing was. So
+            # record the refusal and surface it on the first step.
+            raw_url = (form.get("event_url") or "").strip()
+            if raw_url and not source_url:
+                try:
+                    assert_fetchable(raw_url)
+                    reason = "It was not fetched — enter the details manually."
+                except UnsafeUrlError as exc:
+                    reason = str(exc)
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind="url_refused", value=raw_url,
+                    notes=reason))
             if source_url:
                 repo.add_variable(conn, EventVariable(
                     event_id=event_id, kind="source_url", value=source_url,
@@ -299,6 +313,14 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             # star toggled afterwards would otherwise never appear. Overlay the
             # current set at render time — display only; the decision log is
             # untouched.
+            # A URL refused at creation is reported once, on the first step —
+            # a note about creation, not a permanent banner.
+            url_refused = None
+            if step_key == CHAIN[0]:
+                for var in repo.list_variables(conn, event_id):
+                    if var.kind == "url_refused":
+                        url_refused = {"url": var.value, "reason": var.notes}
+                        break
             if step_key == "venue":
                 favs = repo.favourites(conn)
                 for opt in decision.options:
@@ -315,6 +337,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "decision": decision,
                 "chosen_key": decision.chosen_key,
                 "chosen_value": decision.chosen_value,
+                "url_refused": url_refused,
                 "event_id": event_id,
             })
         finally:

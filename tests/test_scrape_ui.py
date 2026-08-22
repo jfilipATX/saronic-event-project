@@ -209,3 +209,67 @@ class TestFailureIsNeverADeadEnd:
     def test_an_empty_url_is_not_a_crash(self, client):
         r = client.post("/events/scrape", data={"event_url": ""})
         assert r.status_code == 200
+
+
+class TestARefusedUrlIsNeverSilent:
+    """A blocked URL must leave a visible trace, not vanish.
+
+    Design QA found: creating an event while supplying a URL the guard refuses
+    succeeds and the chain works, but the coordinator is told nothing anywhere.
+    Silence reads as 'the URL worked', which is the worst possible answer — they
+    may believe the details were imported when nothing was.
+    """
+
+    def test_a_refused_url_on_create_is_recorded(self, client):
+        r = client.post("/events", data={
+            "name": "Blocked", "city": "Austin",
+            "event_url": "http://localhost/admin",
+        }, follow_redirects=False)
+        assert r.status_code in (302, 303)
+
+    def test_the_first_step_page_says_the_url_was_refused(self, client):
+        r = client.post("/events", data={
+            "name": "Blocked", "city": "Austin",
+            "event_url": "http://localhost/admin",
+        }, follow_redirects=False)
+        page = client.get(r.headers["location"]).text
+        assert "pending-note" in page
+        assert "could not be fetched" in page.lower() or "couldn't" in page.lower()
+        assert "manually" in page.lower()
+
+    def test_the_refused_url_itself_is_shown(self, client):
+        r = client.post("/events", data={
+            "name": "Blocked", "city": "Austin",
+            "event_url": "http://localhost/admin",
+        }, follow_redirects=False)
+        assert "localhost/admin" in client.get(r.headers["location"]).text
+
+    def test_a_clean_event_shows_no_such_note(self, client):
+        r = client.post("/events", data={"name": "Clean", "city": "Austin"},
+                        follow_redirects=False)
+        page = client.get(r.headers["location"]).text
+        assert "could not be fetched" not in page.lower()
+
+    def test_the_notice_does_not_follow_you_to_later_steps(self, client):
+        """It is a note about creation, not a permanent banner."""
+        r = client.post("/events", data={
+            "name": "Blocked", "city": "Austin",
+            "event_url": "http://localhost/admin",
+        }, follow_redirects=False)
+        eid = int(r.headers["location"].rstrip("/").split("/")[2])
+        client.post(f"/events/{eid}/decide",
+                    data={"step": "event_type", "key": "convention"})
+        page = client.get(f"/events/{eid}/steps/audience").text
+        assert "could not be fetched" not in page.lower()
+
+    def test_a_valid_looking_url_is_not_flagged_as_refused(self, client, monkeypatch):
+        from app.features.url_fetch import FetchResult
+
+        monkeypatch.setattr(main_mod, "fetch_url",
+                            lambda url, **kw: FetchResult(ok=True, text=PAGE,
+                                                          final_url="https://x.test/e"))
+        r = client.post("/events", data={
+            "name": "Fine", "city": "Austin", "source_url": "https://x.test/e",
+        }, follow_redirects=False)
+        page = client.get(r.headers["location"]).text
+        assert "could not be fetched" not in page.lower()

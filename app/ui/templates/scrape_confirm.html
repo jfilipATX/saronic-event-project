@@ -24,6 +24,11 @@
 
   <form method="post" action="/events">
     <input type="hidden" name="source_url" value="{{ source_url }}">
+    {# Carry the refused URL forward so creating anyway records WHY nothing was
+       imported, instead of the attempt vanishing silently. #}
+    {% if problem and not source_url %}
+      <input type="hidden" name="event_url" value="{{ event_url }}">
+    {% endif %}
 
     <h2>Event</h2>
     <div class="form-row">
