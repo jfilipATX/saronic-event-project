@@ -8,7 +8,9 @@ CREATE TABLE IF NOT EXISTS events (
     city          TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     audience_estimate INTEGER,
-    event_type    TEXT
+    event_type    TEXT,
+    starts_at     TEXT,
+    ends_at       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS attendees (

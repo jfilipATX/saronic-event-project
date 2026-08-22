@@ -1,0 +1,38 @@
+<!-- schedule.html — event start/end date-times (P4-3).
+     Context: event, event_id, window, description, problem. -->
+{% extends "base.html" %}
+{% block title %}Schedule — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Event window</p>
+  <h1>Schedule</h1>
+
+  {% if problem %}
+    <div class="pending-note">
+      <p><strong>Not changed.</strong> {{ problem }}</p>
+      <p class="muted">The existing schedule is untouched — correct the dates and
+      submit again.</p>
+    </div>
+  {% endif %}
+
+  <p class="muted">{{ description }}</p>
+
+  <form method="post" action="/events/{{ event_id }}/schedule">
+    <div class="form-row">
+      <label class="muted">Starts
+        <input class="input" type="datetime-local" name="starts_at"
+               value="{{ window.start or '' }}">
+      </label>
+      <label class="muted">Ends
+        <input class="input" type="datetime-local" name="ends_at"
+               value="{{ window.end or '' }}">
+      </label>
+      <button class="btn-primary" type="submit">Save schedule</button>
+    </div>
+  </form>
+
+  <p class="muted">
+    Dates are optional while you are still scoping. Leave both blank to
+    unschedule. Times are local to the venue — the run of show is built on this
+    window, so it is worth getting right before you plan the day.
+  </p>
+{% endblock %}

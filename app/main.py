@@ -33,6 +33,11 @@ from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
 from app.features.visuals import VisualRequest, render_all, strip_exif
+from app.features.schedule import (
+    describe_window,
+    parse_window,
+    window_for_event,
+)
 from app.features.roster_import import (
     MAPPABLE_FIELDS,
     apply_roster,
@@ -59,7 +64,8 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 #: Stepper labels for the nav. Chain steps first, then the derived views.
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("slides", "Slides"), ("visuals", "Visuals"), ("invites", "Invitations"),
+    + [("schedule", "Schedule"), ("slides", "Slides"), ("visuals", "Visuals"),
+       ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
 
@@ -348,9 +354,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             raise HTTPException(status_code=400,
                                 detail="An event needs a name and a city.")
 
+        try:
+            window = parse_window(form.get("starts_at") or "",
+                                  form.get("ends_at") or "")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+
         conn = connect()
         try:
             event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
+            if window.is_set:
+                repo.set_event_window(conn, event_id, window)
             source_url = (form.get("source_url") or "").strip()
             # A URL supplied here (rather than via /events/scrape) was never
             # fetched. Silently dropping it is the worst answer: the coordinator
@@ -482,6 +496,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "event_id": event_id,
                 "markdown_url": f"/events/{event_id}/playbook.md",
                 "claude_spend": repo.spend_total(conn, event_id=event_id),
+                "schedule": describe_window(window_for_event(conn, event_id)),
             })
         finally:
             conn.close()
@@ -596,6 +611,47 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    # ── event schedule (P4-3) ────────────────────────────────────────────────
+
+    def _schedule_page(request: Request, conn, event_id: int, event,
+                       problem: str = ""):
+        window = window_for_event(conn, event_id)
+        return templates.TemplateResponse(request, "schedule.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, None),
+            "event_id": event_id,
+            "window": window,
+            "description": describe_window(window),
+            "problem": problem,
+        })
+
+    @app.get("/events/{event_id}/schedule", response_class=HTMLResponse)
+    def schedule_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _schedule_page(request, conn, event_id, load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/schedule", response_class=HTMLResponse)
+    def schedule_set(request: Request, event_id: int,
+                     starts_at: str = Form(""), ends_at: str = Form("")):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                window = parse_window(starts_at, ends_at)
+            except ValueError as exc:
+                # Re-render with the reason and the EXISTING window intact: a
+                # rejected edit must never destroy a schedule that was correct.
+                return _schedule_page(request, conn, event_id, event,
+                                      problem=str(exc))
+            repo.set_event_window(conn, event_id, window)
+            conn.commit()
+            return _schedule_page(request, conn, event_id, event)
         finally:
             conn.close()
 

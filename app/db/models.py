@@ -17,6 +17,9 @@ class Event:
     city: Optional[str] = None
     audience_estimate: Optional[int] = None
     event_type: Optional[str] = None
+    #: P4-3 event window. Optional: "not scheduled yet" is a real state.
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
     created_at: Optional[str] = None
 
 

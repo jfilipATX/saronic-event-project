@@ -195,6 +195,8 @@ _ADDED_COLUMNS = (
     ("attendees", "title", "TEXT"),
     ("attendees", "company", "TEXT"),
     ("attendees", "is_vip", "INTEGER NOT NULL DEFAULT 0"),
+    ("events", "starts_at", "TEXT"),
+    ("events", "ends_at", "TEXT"),
 )
 
 #: Tables added after the first release. CREATE TABLE IF NOT EXISTS in SCHEMA
@@ -522,3 +524,9 @@ def spend_by_surface(conn: sqlite3.Connection,
     sql_text += " GROUP BY surface"
     return {r[0]: round(float(r[1]), 4)
             for r in conn.execute(sql_text, params).fetchall()}
+
+
+def set_event_window(conn: sqlite3.Connection, event_id: int, window) -> None:
+    """Store an event's start/end. Pass a cleared window to unschedule."""
+    conn.execute("UPDATE events SET starts_at=?, ends_at=? WHERE id=?",
+                 (window.start, window.end, event_id))
