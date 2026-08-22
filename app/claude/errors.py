@@ -58,3 +58,29 @@ class ModelUnavailableError(ClaudeError):
             f"Model '{model}' is unavailable or not served by Anthropic. "
             "Verify the alias resolves to a real Claude model."
         )
+
+
+class EmptyResponseError(ClaudeError):
+    """The call succeeded and billed, but produced no usable text.
+
+    Real cause seen in practice: reasoning models (opus-5 and similar) emit
+    ``thinking`` blocks that draw from the same ``max_tokens`` budget. When
+    thinking exhausts the budget the response stops with ``max_tokens`` and the
+    text block is empty — a silent blank that would otherwise be mistaken for a
+    successful completion. Retrying with a larger budget usually resolves it.
+    """
+
+    retryable = True
+
+    def __init__(self, stop_reason: str | None = None,
+                 block_types: list[str] | None = None) -> None:
+        self.stop_reason = stop_reason
+        self.block_types = block_types or []
+        detail = f"stop_reason={stop_reason!r}, blocks={self.block_types}"
+        hint = ""
+        if stop_reason == "max_tokens":
+            hint = (" The token budget was consumed before any text was produced"
+                    " — raise max_tokens.")
+        super().__init__(
+            f"Claude returned no text content ({detail})."+hint
+        )

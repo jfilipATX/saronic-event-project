@@ -17,6 +17,7 @@ from app.claude.client import (
     get_client,
 )
 from app.claude.errors import (
+    EmptyResponseError,
     BudgetExceededError,
     ClaudeError,
     ExpiredKeyError,
@@ -233,3 +234,60 @@ class TestGetClientFactory:
                      anthropic_spend_limit=42.0)
         client = get_client(cfg)
         assert client._meter.limit == 42.0
+
+
+class TestEmptyResponseIsNotSilentSuccess:
+    """Reasoning models can burn max_tokens on thinking and return no text.
+
+    Found in the real pass: a surface reported 'ok' with 0 characters while
+    still billing. A blank that looks like success is worse than a loud failure.
+    """
+
+    def test_text_only_response_with_no_text_raises(self):
+        m = SpendMeter(limit_usd=10.0)
+
+        class _Thinking:
+            type = "thinking"
+            text = ""
+
+        class _EmptyText:
+            type = "text"
+            text = ""
+
+        class _R:
+            content = [_Thinking(), _EmptyText()]
+            usage = _Usage(80, 700)
+            stop_reason = "max_tokens"
+
+        client = _real(m, lambda c, k: _R())
+        with pytest.raises(EmptyResponseError) as exc:
+            client.complete(system="s", prompt="p")
+        assert "max_tokens" in str(exc.value)
+
+    def test_empty_response_still_records_the_spend_it_incurred(self):
+        """The call billed even though it produced nothing; the meter must know."""
+        m = SpendMeter(limit_usd=10.0)
+
+        class _R:
+            content = []
+            usage = _Usage(80, 700)
+            stop_reason = "max_tokens"
+
+        with pytest.raises(EmptyResponseError):
+            _real(m, lambda c, k: _R()).complete(system="s", prompt="p")
+        assert m.spent > 0
+
+    def test_thinking_plus_real_text_returns_only_the_text(self):
+        m = SpendMeter(limit_usd=10.0)
+
+        class _Thinking:
+            type = "thinking"
+            text = "internal reasoning"
+
+        class _R:
+            content = [_Thinking(), _Block("the actual answer")]
+            usage = _Usage(80, 200)
+            stop_reason = "end_turn"
+
+        out = _real(m, lambda c, k: _R()).complete(system="s", prompt="p")
+        assert out == "the actual answer"

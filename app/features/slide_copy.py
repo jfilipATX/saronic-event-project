@@ -100,7 +100,9 @@ def generate_title_copy(client, name: str, city: Optional[str] = None,
         raw = client.complete(
             system=SYSTEM,
             prompt=build_copy_prompt(name, city, event_type, audience, venue),
-            max_tokens=120,
+            # Reasoning models consume part of this budget on thinking blocks
+            # before emitting text; too small a budget yields an empty response.
+            max_tokens=2000,
             temperature=0.6,
         )
     except Exception:

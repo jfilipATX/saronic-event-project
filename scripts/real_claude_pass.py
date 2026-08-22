@@ -119,7 +119,9 @@ def main() -> int:
     for name, prompt in _surfaces(playbook_md):
         started = time.time()
         try:
-            text = client.complete(system=SYSTEM, prompt=prompt, max_tokens=700)
+            # Reasoning models spend part of max_tokens on thinking blocks, so
+            # this budget must cover thinking AND the answer.
+            text = client.complete(system=SYSTEM, prompt=prompt, max_tokens=2500)
             status = "ok"
         except ClaudeError as exc:
             text = f"[FAILED] {type(exc).__name__}: {exc}"

@@ -22,6 +22,7 @@ from typing import Any, Mapping
 from app.claude.errors import (
     BudgetExceededError,
     ClaudeError,
+    EmptyResponseError,
     ExpiredKeyError,
     ModelUnavailableError,
     RateLimitError,
@@ -136,9 +137,19 @@ class RealClaudeClient(ClaudeClient):
                     input_tokens=getattr(usage, "input_tokens", 0),
                     output_tokens=getattr(usage, "output_tokens", 0),
                 )
-            return "".join(
-                block.text for block in resp.content if getattr(block, "type", "") == "text"
+            text = "".join(
+                block.text for block in resp.content
+                if getattr(block, "type", "") == "text"
             )
+            if not text.strip():
+                # Reasoning models emit `thinking` blocks that draw from the same
+                # max_tokens budget. If thinking exhausts it, the text block comes
+                # back empty while the call still bills — silently returning "" here
+                # would look like success and ship a blank slide. Fail loudly.
+                stop = getattr(resp, "stop_reason", None)
+                kinds = sorted({getattr(b, "type", "?") for b in resp.content})
+                raise EmptyResponseError(stop_reason=stop, block_types=kinds)
+            return text
 
     @staticmethod
     def _map_error(exc: Exception) -> ClaudeError:

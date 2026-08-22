@@ -1,0 +1,43 @@
+{
+  "model": "claude-opus-5",
+  "cap_usd": 5.0,
+  "spent_usd": 0.2237,
+  "remaining_usd": 4.7763,
+  "surfaces": [
+    {
+      "surface": "event_type_classification",
+      "status": "ok",
+      "seconds": 15.01,
+      "chars": 1286,
+      "spent_after": 0.0288
+    },
+    {
+      "surface": "audience_estimate_reasoning",
+      "status": "ok",
+      "seconds": 35.22,
+      "chars": 3934,
+      "spent_after": 0.0966
+    },
+    {
+      "surface": "venue_fit_reasoning",
+      "status": "ok",
+      "seconds": 6.79,
+      "chars": 878,
+      "spent_after": 0.1136
+    },
+    {
+      "surface": "slide_copy",
+      "status": "ok",
+      "seconds": 23.38,
+      "chars": 2217,
+      "spent_after": 0.1663
+    },
+    {
+      "surface": "playbook_summary",
+      "status": "ok",
+      "seconds": 7.32,
+      "chars": 804,
+      "spent_after": 0.2237
+    }
+  ]
+}
