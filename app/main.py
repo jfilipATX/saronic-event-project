@@ -62,6 +62,14 @@ from app.features.workflow import CHAIN, CoordinatorWorkflow
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
 #: Stepper labels for the nav. Chain steps first, then the derived views.
+#: Nav entries served from /events/{id}/{key}, NOT from the decision chain.
+#: This MUST list every non-chain entry in _NAV. An entry missing here silently
+#: receives a /steps/{key} URL, which route-mismatches into another page and
+#: still returns 200 - the af5227f bug, which a merge reintroduced for
+#: "schedule" because the two edits touched the same line from different
+#: branches. Derived below rather than hand-listed so they cannot drift again.
+_CHAIN_KEYS = set(CHAIN)
+
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
     + [("schedule", "Schedule"), ("slides", "Slides"), ("visuals", "Visuals"),
@@ -190,7 +198,11 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
-            elif key in ("slides", "visuals", "checkin", "invites"):
+            elif key not in _CHAIN_KEYS:
+                # Anything that is not a decision-chain step is a derived view
+                # at /events/{id}/{key}. Deriving this from CHAIN rather than
+                # listing keys means adding a nav entry cannot silently produce
+                # a broken /steps/ link.
                 state = "active" if current == key else "todo"
                 url = f"/events/{event_id}/{key}"
             else:
