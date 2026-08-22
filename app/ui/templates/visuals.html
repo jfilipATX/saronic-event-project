@@ -1,0 +1,71 @@
+<!-- visuals.html — composited event imagery for kiosks, booths and social.
+     Context: event, event_id, results, has_upload, open_questions, problem. -->
+{% extends "base.html" %}
+{% block title %}Visuals — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Event presence</p>
+  <h1>Visuals</h1>
+
+  {% if open_questions %}
+    <div class="pending-note">
+      <p><strong>Draft — {{ open_questions | length }} decision{{ 's' if open_questions | length != 1 }} still open.</strong></p>
+      <p class="muted">These render from what has been decided so far. Answer the
+      remaining steps and they will update.</p>
+    </div>
+  {% endif %}
+
+  {% if problem %}
+    <div class="pending-note">
+      <p><strong>Upload not used.</strong> {{ problem }}</p>
+    </div>
+  {% endif %}
+
+  <h2>City photograph</h2>
+  <p class="muted">
+    A photo of the city or the venue itself makes the strongest backdrop — venue
+    photography beats stock imagery. Minimum 1600×900. Location data is stripped
+    from the file on upload.
+    {% if has_upload %}<strong>An image is in use.</strong>{% endif %}
+  </p>
+  <form method="post" action="/events/{{ event_id }}/visuals/upload"
+        enctype="multipart/form-data" class="form-row">
+    <input class="input" type="file" name="city_image" accept="image/*" required>
+    <button class="btn-primary" type="submit">
+      {% if has_upload %}Replace image{% else %}Upload image{% endif %}
+    </button>
+  </form>
+
+  <h2>Rendered set ({{ results | length }})</h2>
+  {% if results %}
+    <p class="muted">
+      Every variant is generated for you — use the ones that fit and ignore the
+      rest. All imagery is Saronic's own or yours; nothing is AI-generated.
+    </p>
+    <ul class="option-list">
+      {% for result in results %}
+        <li class="option-card">
+          <span class="option-label">Variant {{ result.variant }}</span>
+          <img class="visual-thumb"
+               src="/events/{{ event_id }}/visuals/{{ result.variant }}-16x9.png"
+               alt="Variant {{ result.variant }} composition">
+          <div class="option-meta">
+            <span>Base: {{ result.base_source }}</span>
+            <span>Headline {{ result.headline_size }}px</span>
+            <span>{{ result.font_family }}{% if not result.font_is_brand %} (fallback){% endif %}</span>
+          </div>
+          <p class="option-reasoning">{{ result.template }}</p>
+          <div class="option-actions">
+            <a class="btn-quiet"
+               href="/events/{{ event_id }}/visuals/{{ result.variant }}-16x9.png"
+               download>Download 16:9</a>
+            <a class="btn-quiet"
+               href="/events/{{ event_id }}/visuals/{{ result.variant }}-1x1.png"
+               download>Download square</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Nothing rendered yet.</p>
+  {% endif %}
+{% endblock %}

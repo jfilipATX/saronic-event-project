@@ -229,3 +229,13 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* P2-4 visual composer: rendered variant previews. */
+.visual-thumb {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  height: auto;
+  margin: var(--space-md, 0.75rem) 0;
+  border: 1px solid var(--color-steel-dim, rgba(255,255,255,0.08));
+}

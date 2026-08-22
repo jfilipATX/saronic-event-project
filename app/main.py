@@ -32,6 +32,7 @@ from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
+from app.features.visuals import VisualRequest, render_all, strip_exif
 from app.features.roster_import import (
     MAPPABLE_FIELDS,
     apply_roster,
@@ -58,7 +59,7 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 #: Stepper labels for the nav. Chain steps first, then the derived views.
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("slides", "Slides"), ("invites", "Invitations"),
+    + [("slides", "Slides"), ("visuals", "Visuals"), ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
 
@@ -583,6 +584,94 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    # ── visuals (P2-4) ───────────────────────────────────────────────────────
+
+    def _visuals_dir(event_id: int) -> str:
+        return os.path.join("generated", "visuals", str(event_id))
+
+    def _visuals_page(request: Request, conn, event_id: int, event,
+                      problem: str = ""):
+        playbook = compose_playbook(conn, event_id)
+        upload = os.path.join(_visuals_dir(event_id), "city.png")
+        results = []
+        try:
+            results = render_all(VisualRequest(
+                event_name=event.name,
+                city=event.city or "",
+                dates=_event_dates(conn, event_id),
+                city_image=upload if os.path.exists(upload) else None,
+                out_dir=_visuals_dir(event_id),
+            ))
+        except ValueError as exc:
+            problem = problem or str(exc)
+        return templates.TemplateResponse(request, "visuals.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "visuals"),
+            "event_id": event_id,
+            "results": results,
+            "has_upload": os.path.exists(upload),
+            "open_questions": playbook.open_questions,
+            "problem": problem,
+        })
+
+    def _event_dates(conn, event_id: int) -> str:
+        variables = {v.kind: v.value for v in repo.list_variables(conn, event_id)}
+        start, end = variables.get("start_date", ""), variables.get("end_date", "")
+        if start and end:
+            return f"{start} – {end}"
+        return start or ""
+
+    @app.get("/events/{event_id}/visuals", response_class=HTMLResponse)
+    def visuals_view(request: Request, event_id: int):
+        conn = connect()
+        try:
+            return _visuals_page(request, conn, event_id, load_event(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/visuals/upload", response_class=HTMLResponse)
+    async def visuals_upload(request: Request, event_id: int,
+                             city_image: UploadFile = File(...)):
+        """Ingest a city photo. EXIF (including GPS) is stripped on the way in."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            raw = await city_image.read()
+            os.makedirs(_visuals_dir(event_id), exist_ok=True)
+            tmp = os.path.join(_visuals_dir(event_id), "_incoming")
+            with open(tmp, "wb") as fh:
+                fh.write(raw)
+            problem = ""
+            try:
+                strip_exif(tmp, os.path.join(_visuals_dir(event_id), "city.png"))
+            except Exception:
+                problem = ("That file could not be read as an image. "
+                           "Upload a JPEG or PNG.")
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            return _visuals_page(request, conn, event_id, event, problem=problem)
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/visuals/{variant}-{aspect}.png")
+    def visual_png(event_id: int, variant: str, aspect: str):
+        path = os.path.join(_visuals_dir(event_id), _slugify_event(event_id),
+                            f"{variant}-{aspect}.png")
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="Not rendered yet.")
+        with open(path, "rb") as fh:
+            return Response(content=fh.read(), media_type="image/png")
+
+    def _slugify_event(event_id: int) -> str:
+        conn = connect()
+        try:
+            from app.features.visuals import _slug
+
+            return _slug(load_event(conn, event_id).name)
         finally:
             conn.close()
 
