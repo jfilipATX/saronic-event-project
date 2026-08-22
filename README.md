@@ -54,9 +54,15 @@ Captured from a live server against real workflow state — not mockups.
 | ![Home](docs/screenshots/01-home.png) | ![Event type](docs/screenshots/02-event-type.png) |
 | *Home — start an event* | *Step 1: event type, options + reasoning* |
 | ![Audience](docs/screenshots/03-audience.png) | ![Venue](docs/screenshots/04-venue.png) |
-| *Step 2: audience estimate* | *Step 3: venue slate with fit badges — nothing hidden* |
-| ![Check-in](docs/screenshots/05-checkin.png) | ![Playbook](docs/screenshots/06-playbook.png) |
-| *Day-of check-in desk* | *Composed playbook with decision log* |
+| *Step 2: audience estimate (custom values supported)* | *Step 3: venue slate — fit badges, amenities, favourites, opt-out* |
+| ![Add venue](docs/screenshots/04b-venue-add.png) | ![Run of show](docs/screenshots/05-run-of-show.png) |
+| *Add a venue by URL — scraped facts are proposals* | *Run of show — printable day-of document* |
+| ![Concurrency board](docs/screenshots/05b-board-conflict.png) | ![Check-in](docs/screenshots/05-checkin.png) |
+| *Concurrency board — double-booked owner flagged, never blocked* | *Day-of check-in desk* |
+| ![Visuals](docs/screenshots/06b-visuals.png) | ![Invitations](docs/screenshots/06c-invites.png) |
+| *Composited booth/kiosk visuals from owned assets* | *Issue QR credentials from the browser* |
+| ![Playbook](docs/screenshots/06-playbook.png) | ![Slides](docs/screenshots/08-slides-claude.png) |
+| *The composed playbook — every decision with reasoning* | *Slides with Claude-written copy, attributed* |
 
 ### QR check-in outcomes
 
