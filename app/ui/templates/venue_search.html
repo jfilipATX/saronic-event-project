@@ -1,0 +1,92 @@
+<!-- venue_search.html — manual-trigger LLM venue search (P5-4).
+     Context: event, event_id, est_input_tokens, est_output_tokens, est_usd,
+     cap_usd, spent_usd, over_cap, problem, options (after search), searched. -->
+{% extends "base.html" %}
+{% block title %}Search venues — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Venue</p>
+  <h1>Ask Claude for venue ideas</h1>
+
+  <p class="muted">
+    This is a manual, one-shot search: it asks Claude to propose venues near
+    <strong>{{ event.location }}</strong> that fit your audience and amenities.
+    Proposals come back as cards you accept or ignore — nothing is added until
+    you confirm.
+  </p>
+
+  {# The cost estimate is shown BEFORE the coordinator triggers the call. #}
+  <div class="cost-estimate" aria-live="polite">
+    <p><strong>Estimated cost of this search</strong></p>
+    <ul class="muted">
+      <li>~{{ est_input_tokens }} input tokens + {{ est_output_tokens }} output tokens</li>
+      <li>≈ <strong>${{ "%.4f"|format(est_usd) }}</strong> worst-case (conservative, blended rate)</li>
+      <li>Per-event venue-search cap: <strong>${{ "%.2f"|format(cap_usd) }}</strong></li>
+      <li>Spent on this event so far: <strong>${{ "%.2f"|format(spent_usd) }}</strong></li>
+    </ul>
+    {% if over_cap %}
+      <div class="pending-note">
+        This event has reached its venue-search cap — the button is disabled and
+        no call will be made.
+      </div>
+    {% else %}
+      <p class="muted">
+        You will see the real cost in the spend ledger after the call. This
+        estimate is shown up front so the trigger is an informed choice.
+      </p>
+    {% endif %}
+  </div>
+
+  <form method="post" action="/events/{{ event_id }}/venues/search">
+    <div class="form-row">
+      <label class="muted">City
+        <input class="input" type="text" name="city" value="{{ event.city or '' }}">
+      </label>
+      <label class="muted">State
+        <input class="input" type="text" name="state" value="{{ event.state or '' }}">
+      </label>
+      <label class="muted">Target capacity
+        <input class="input" type="number" name="capacity" min="1"
+               value="{{ event.audience_estimate or '' }}">
+      </label>
+    </div>
+    <fieldset class="form-row">
+      <legend class="muted">Required amenities</legend>
+      {% for key, label in amenity_defaults %}
+        <label class="checkbox"><input type="checkbox" name="amenities"
+               value="{{ key }}"> {{ label }}</label>
+      {% endfor %}
+    </fieldset>
+    <button class="btn-primary" type="submit"
+            {% if over_cap %}disabled{% endif %}>
+      Run venue search (~${{ "%.4f"|format(est_usd) }})
+    </button>
+  </form>
+
+  {% if problem %}
+    <div class="pending-note"><p><strong>{{ problem }}</strong></p></div>
+  {% endif %}
+
+  {% if searched and options %}
+    <h2>Proposed venues</h2>
+    <p class="muted">Proposals from the search. Accept one to add it to the
+    slate, or ignore it. These are not yet saved.</p>
+    {% for option in options %}
+      <div class="proposal-card">
+        <h3>{{ option.label }}</h3>
+        <p class="option-reasoning">{{ option.reasoning }}</p>
+        <form method="post" action="/events/{{ event_id }}/venues/add">
+          <input type="hidden" name="venue_name" value="{{ option.label }}">
+          <input type="hidden" name="city"
+                 value="{{ option.data.city or event.city or '' }}">
+          <input type="hidden" name="capacity"
+                 value="{{ option.data.capacity or '' }}">
+          <button class="btn-quiet" type="submit">Add this venue</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="form-row">
+    <a class="btn-quiet" href="/events/{{ event_id }}/steps/venue">Back to venues</a>
+  </div>
+{% endblock %}
