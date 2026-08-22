@@ -244,3 +244,44 @@ class TestExifHygiene:
                             out_dir=str(tmp_path / "out"))
         with pytest.raises(ValueError, match="too small"):
             render_variant(req, "A")
+
+
+class TestPressKitPathIsCanonical:
+    """SARONIC_PRESS_KIT must redirect composites, not just slide imagery.
+
+    Third instance of "helper module reimplements app config": visuals.py derived
+    its own press-kit path, so pointing the env var at a real client checkout
+    would correctly move slide imagery while silently leaving composites on the
+    bundled copy — a mismatch nobody would notice until the wrong vessel shipped
+    on a booth display.
+    """
+
+    def test_visuals_uses_the_same_root_as_images(self):
+        from app.features import images, visuals
+
+        assert visuals.PRESS_KIT_ROOT == images.PRESS_KIT_ROOT
+
+    def test_the_env_var_redirects_composites(self, tmp_path, monkeypatch):
+        """Reloading with the env var set must move the product source."""
+        import importlib
+
+        from app.features import images, visuals
+
+        custom = tmp_path / "client-press-kit"
+        (custom / "Images").mkdir(parents=True)
+        Image.new("RGB", (1800, 900), (7, 9, 11)).save(custom / "Images" / "Boat.png")
+
+        monkeypatch.setenv("SARONIC_PRESS_KIT", str(custom))
+        importlib.reload(images)
+        importlib.reload(visuals)
+        try:
+            assert visuals.PRESS_KIT_ROOT == str(custom)
+            visuals._PRODUCT_CACHE.clear()
+            product = visuals._press_kit_product()
+            assert product is not None
+            assert product.size == (1800, 900)
+        finally:
+            monkeypatch.delenv("SARONIC_PRESS_KIT", raising=False)
+            importlib.reload(images)
+            importlib.reload(visuals)
+            visuals._PRODUCT_CACHE.clear()

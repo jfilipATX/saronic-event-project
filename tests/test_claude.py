@@ -331,3 +331,46 @@ class TestConfigRequiresAKeyNotJustAFlag:
         monkeypatch.setenv("USE_REAL_CLAUDE", "0")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 90)
         assert load_config().claude_enabled is False
+
+
+class TestModelUnavailableNamesTheConfiguredModel:
+    """A 404 must name the model the client is actually using.
+
+    Fourth instance of the config-reimplementation pattern, found during the
+    endgame sweep: _map_error read ANTHROPIC_MODEL from the environment instead
+    of the client's own config. When the model is set programmatically rather
+    than via .env, the error reported '?' — and it only fires on a failure path,
+    so nobody would see it until the day something broke.
+    """
+
+    def test_the_error_names_the_clients_model(self):
+        from app.claude.client import RealClaudeClient
+        from app.claude.errors import ModelUnavailableError
+        from app.claude.meter import SpendMeter
+        from app.config import Config
+
+        cfg = Config(anthropic_api_key="sk-ant-x", anthropic_model="claude-test-9",
+                     use_real_claude=True)
+        client = RealClaudeClient(cfg, SpendMeter(limit_usd=1.0))
+
+        class _NotFound(Exception):
+            status_code = 404
+
+        mapped = client._map_error(_NotFound("no such model"))
+        assert isinstance(mapped, ModelUnavailableError)
+        assert "claude-test-9" in str(mapped)
+
+    def test_it_does_not_fall_back_to_the_environment(self, monkeypatch):
+        from app.claude.client import RealClaudeClient
+        from app.claude.meter import SpendMeter
+        from app.config import Config
+
+        monkeypatch.setenv("ANTHROPIC_MODEL", "claude-from-env")
+        cfg = Config(anthropic_api_key="sk-ant-x", anthropic_model="claude-real",
+                     use_real_claude=True)
+        client = RealClaudeClient(cfg, SpendMeter(limit_usd=1.0))
+
+        class _NotFound(Exception):
+            status_code = 404
+
+        assert "claude-from-env" not in str(client._map_error(_NotFound("x")))

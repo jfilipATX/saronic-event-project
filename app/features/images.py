@@ -30,6 +30,17 @@ _BUNDLED_ROOT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "assets", "press-kit",
 )
+#: Root of the press-kit assets. THE canonical path — do not re-derive.
+#:
+#: Every consumer must import this rather than computing its own, and
+#: visuals.PRESS_KIT_ROOT re-exports it for that reason. Deriving it separately
+#: is silently wrong: SARONIC_PRESS_KIT would redirect one surface and not
+#: another, so a client checkout ships the right vessel on the deck and the
+#: bundled one on the booth display. That has now happened twice (slide imagery
+#: vs composites) alongside the same shape in the signing secret.
+#:
+#: Defaults to the copy bundled in the repo (``assets/press-kit``) so a fresh
+#: clone renders correctly on any machine with no configuration.
 PRESS_KIT_ROOT = os.environ.get("SARONIC_PRESS_KIT", _BUNDLED_ROOT)
 
 #: role -> path relative to the press-kit root. Mirrors the DESIGN.md table.

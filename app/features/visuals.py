@@ -22,6 +22,8 @@ from typing import List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from app.features import images
+
 CANVAS_16X9: Tuple[int, int] = (1920, 1080)
 CANVAS_1X1: Tuple[int, int] = (1080, 1080)
 
@@ -55,8 +57,16 @@ _BODY_FONTS = (
     ("DejaVu Sans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", False),
 )
 
-_ASSETS = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "assets")
-_PRESS_KIT = os.path.normpath(os.path.join(_ASSETS, "press-kit"))
+_ASSETS = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "assets"))
+
+#: Re-exported from images.py rather than derived again. Deriving it separately
+#: meant SARONIC_PRESS_KIT redirected slide imagery but NOT composites, so a
+#: client checkout would silently ship the bundled vessel on a booth display.
+#: Third instance of this shape in the codebase; images.PRESS_KIT_ROOT is the
+#: single source.
+PRESS_KIT_ROOT = images.PRESS_KIT_ROOT
+
 _BRAND_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "static", "brand"))
 
@@ -151,7 +161,7 @@ def _press_kit_product() -> Optional[Image.Image]:
     """
     if "image" not in _PRODUCT_CACHE:
         found = None
-        for root, _dirs, files in os.walk(_PRESS_KIT):
+        for root, _dirs, files in os.walk(PRESS_KIT_ROOT):
             for name in sorted(files):
                 if (name.lower().endswith((".jpg", ".jpeg", ".png"))
                         and "logo" not in name.lower()):
