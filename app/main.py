@@ -58,7 +58,8 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 #: Stepper labels for the nav. Chain steps first, then the derived views.
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("slides", "Slides"), ("checkin", "Check-in"), ("playbook", "Playbook")]
+    + [("slides", "Slides"), ("invites", "Invitations"),
+       ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
 
 #: Set by create_app so helpers/tests can reach the active database.
@@ -178,7 +179,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             if key == "playbook":
                 state = "active" if current == "playbook" else "todo"
                 url = f"/events/{event_id}/playbook"
-            elif key in ("slides", "checkin"):
+            elif key in ("slides", "checkin", "invites"):
                 state = "active" if current == key else "todo"
                 url = f"/events/{event_id}/{key}"
             else:
@@ -593,7 +594,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         validation failure never makes the coordinator retype everything."""
         return templates.TemplateResponse(request, "invites.html", {
             "event": event,
-            "steps": nav_steps(conn, event_id, None),
+            "steps": nav_steps(conn, event_id, "invites"),
             "event_id": event_id,
             "attendees": repo.list_attendees(conn, event_id),
             "issued": issued,
