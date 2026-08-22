@@ -404,6 +404,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # Country defaults to US (Joseph's standing default); a blank form field
         # must not produce a broken location line.
         country = (form.get("country") or "US").strip() or "US"
+        owner_name = (form.get("owner_name") or "").strip() or None
+        owner_role = (form.get("owner_role") or "").strip() or None
         if not name or not city:
             raise HTTPException(status_code=400,
                                 detail="An event needs a name and a city.")
@@ -417,7 +419,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         conn = connect()
         try:
             event_id = CoordinatorWorkflow(conn).start_event(
-                name=name, city=city, state=state, country=country)
+                name=name, city=city, state=state, country=country,
+                owner_name=owner_name, owner_role=owner_role)
             if window.is_set:
                 repo.set_event_window(conn, event_id, window)
             source_url = (form.get("source_url") or "").strip()
@@ -552,6 +555,9 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "markdown_url": f"/events/{event_id}/playbook.md",
                 "claude_spend": repo.spend_total(conn, event_id=event_id),
                 "schedule": describe_schedule(conn, event_id),
+                "owner": (event.owner_name +
+                          (f" — {event.owner_role}" if event.owner_role else ""))
+                         if event.owner_name else None,
             })
         finally:
             conn.close()
@@ -1361,6 +1367,16 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # A VIP banner only on a NEW arrival: re-announcing on a repeat scan
         # would train the desk to ignore it.
         vip = bool(attendee and attendee.is_vip and scan_state == STATE_VALID)
+        # P5-9-light: display-only gating. Name the check-in staff for THIS
+        # event (per-event can_check_in), excluding erased people. This signals
+        # assignment; it never hides the roster from the coordinator.
+        assignees = []
+        for row in repo.event_staff_rows(conn, event_id):
+            if not row["can_check_in"]:
+                continue
+            person = repo.get_person(conn, row["person_id"])
+            if person and not person.is_erased:
+                assignees.append(person.display_name)
         return templates.TemplateResponse(request, "checkin.html", {
             "event": event,
             "steps": nav_steps(conn, event_id, "checkin"),
@@ -1370,6 +1386,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "scan_name": scan_name,
             "scan_vip": vip,
             "scan_company": getattr(attendee, "company", None) if vip else None,
+            "checkin_assignees": sorted(assignees),
             "problem": problem,
         })
 

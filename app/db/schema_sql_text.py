@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS events (
     audience_estimate INTEGER,
     event_type    TEXT,
     starts_at     TEXT,
-    ends_at       TEXT
+    ends_at       TEXT,
+    owner_name    TEXT,
+    owner_role    TEXT
 );
 
 -- P5-2: flexible / multi-day dates. An event is one or more calendar days,

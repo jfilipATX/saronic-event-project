@@ -21,6 +21,9 @@
     <div>
       <p class="eyebrow">{{ event.name }}</p>
       <p class="muted nav-sub">{{ event.location }}</p>
+      {% if event.owner_name %}
+        <p class="muted nav-sub">{{ event.owner_name }}{% if event.owner_role %} — {{ event.owner_role }}{% endif %}</p>
+      {% endif %}
     </div>
     <ul class="stepper">
       {% for step in steps %}

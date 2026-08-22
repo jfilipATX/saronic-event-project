@@ -25,6 +25,11 @@ class Event:
     #: P4-3 event window. Optional: "not scheduled yet" is a real state.
     starts_at: Optional[str] = None
     ends_at: Optional[str] = None
+    #: P5-9-light: the accountable event owner (name + optional role label).
+    #: Optional — a legacy/blank event simply has no named owner. Display-only;
+    #: there is no auth, so this is a signal of accountability, not access.
+    owner_name: Optional[str] = None
+    owner_role: Optional[str] = None
     created_at: Optional[str] = None
 
     @property

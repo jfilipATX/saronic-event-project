@@ -196,6 +196,11 @@ def render_markdown(playbook: Playbook) -> str:
         meta.append(f"**Type:** {ev.event_type}")
     if ev.audience_estimate:
         meta.append(f"**Audience estimate:** {ev.audience_estimate:,}")
+    if ev.owner_name:
+        owner = ev.owner_name
+        if ev.owner_role:
+            owner += f" — {ev.owner_role}"
+        meta.append(f"**Event owner:** {owner}")
     if meta:
         out += [" · ".join(meta), ""]
 

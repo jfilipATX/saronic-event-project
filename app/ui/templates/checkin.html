@@ -1,11 +1,24 @@
 <!-- checkin.html — day-of check-in desk.
-     Context: event, steps, event_id, attendees, scan_state, scan_name. -->
+     Context: event, steps, event_id, attendees, scan_state, scan_name,
+     checkin_assignees (sorted display names of per-event check-in staff). -->
 {% extends "base.html" %}
 {% block title %}Check-in — {{ event.name }}{% endblock %}
 {% block content %}
   <p class="eyebrow">Door operations</p>
   <h1>Check-in</h1>
   <p class="muted">{{ event.location }}</p>
+
+  {% if checkin_assignees %}
+    {# Display-only signal: who is assigned to operate this desk, per event. #}
+    <div class="owner-note">
+      <strong>Check-in assigned to:</strong> {{ checkin_assignees | join(", ") }}.
+      Only check-in staff should operate this desk — this is a signal, not
+      access control (the app has no login yet).
+    </div>
+  {% else %}
+    <p class="muted">No check-in staff tagged yet — tag staff on the
+    <a href="/events/{{ event_id }}/run-of-show">Run of show</a> page.</p>
+  {% endif %}
 
   {% if scan_state == 'valid' %}
     <div class="scan-banner scan-valid">
