@@ -50,7 +50,7 @@ def scraping(monkeypatch):
         main_mod, "fetch_url",
         lambda url, **kw: FetchResult(ok=True, text=PAGE,
                                       final_url="https://ahoy.test/fleet-week"))
-    monkeypatch.setattr(main_mod, "_scrape_client", lambda: _Claude())
+    monkeypatch.setattr(main_mod, "_scrape_client", lambda conn=None: _Claude())
 
 
 class TestCreateScreenOffersUrlIntake:
@@ -190,7 +190,7 @@ class TestFailureIsNeverADeadEnd:
             lambda url, **kw: FetchResult(ok=True, text="<p>nothing here</p>",
                                           final_url="https://x.test/e"))
         monkeypatch.setattr(main_mod, "_scrape_client",
-                            lambda: _Claude("no json at all"))
+                            lambda conn=None: _Claude("no json at all"))
         r = client.post("/events/scrape", data={"event_url": "https://x.test/e"})
         assert r.status_code == 200
         assert "manually" in r.text.lower() or "nothing" in r.text.lower()
@@ -201,7 +201,7 @@ class TestFailureIsNeverADeadEnd:
         monkeypatch.setattr(
             main_mod, "fetch_url",
             lambda url, **kw: FetchResult(ok=True, text=PAGE, final_url="https://x.test/e"))
-        monkeypatch.setattr(main_mod, "_scrape_client", lambda: None)
+        monkeypatch.setattr(main_mod, "_scrape_client", lambda conn=None: None)
         r = client.post("/events/scrape", data={"event_url": "https://x.test/e"})
         assert r.status_code == 200
         assert 'name="name"' in r.text

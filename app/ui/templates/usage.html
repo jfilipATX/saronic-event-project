@@ -1,0 +1,63 @@
+<!-- usage.html — Claude API spend ledger. Bookkeeping, not a dashboard.
+     Context: entries, unattributed, event_names, total. -->
+{% extends "base.html" %}
+{% block title %}Usage & spend{% endblock %}
+{% block content %}
+  <p class="eyebrow">Bookkeeping</p>
+  <h1>Usage &amp; spend</h1>
+  <h2>Claude API spend: ${{ "%.2f"|format(total) }}</h2>
+  <p class="muted">
+    Every Claude call this tool has made, priced. This is API spend only — it is
+    not what the event costs to run. Calls that failed before billing show
+    $0.0000; a call that billed but returned nothing usable shows its real cost,
+    so this agrees with the Anthropic invoice rather than flattering us.
+  </p>
+
+  {% if entries or unattributed %}
+    <div class="card-surface">
+      <table class="table">
+        <thead>
+          <tr>
+            <th><span class="table-header">Event</span></th>
+            <th><span class="table-header">Surface</span></th>
+            <th><span class="table-header">Model</span></th>
+            <th><span class="table-header">Tokens</span></th>
+            <th><span class="table-header">USD</span></th>
+            <th><span class="table-header">When</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+            <tr>
+              <td>{{ event_names.get(entry.event_id, "—") }}</td>
+              <td>{{ entry.surface }}{% if entry.error %}
+                <span class="muted">({{ entry.error }})</span>{% endif %}</td>
+              <td>{{ entry.model }}</td>
+              <td>{{ entry.input_tokens }} in / {{ entry.output_tokens }} out</td>
+              <td>${{ "%.4f"|format(entry.usd) }}</td>
+              <td>{{ entry.created_at }}</td>
+            </tr>
+          {% endfor %}
+          {% if unattributed %}
+            <tr><td colspan="6"><span class="table-header">Not event-specific</span></td></tr>
+            {% for entry in unattributed %}
+              <tr>
+                <td class="muted">—</td>
+                <td>{{ entry.surface }}{% if entry.error %}
+                  <span class="muted">({{ entry.error }})</span>{% endif %}</td>
+                <td>{{ entry.model }}</td>
+                <td>{{ entry.input_tokens }} in / {{ entry.output_tokens }} out</td>
+                <td>${{ "%.4f"|format(entry.usd) }}</td>
+                <td>{{ entry.created_at }}</td>
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No Claude calls recorded — this tool has run entirely offline.</p>
+  {% endif %}
+
+  <p class="mt-xl"><a class="link-accent" href="/">Back to events</a></p>
+{% endblock %}

@@ -1,6 +1,9 @@
 <!-- home.html — event list + create form. extends base.html. -->
 {% extends "base.html" %}
-{% block title %}Saronic Event Tool{% endblock %}
+{% block title %}Saronic Event Tool  <p class="mt-xl muted">
+    <a class="link-accent" href="/usage">Usage &amp; spend</a>
+  </p>
+{% endblock %}
 {% block content %}
   <p class="eyebrow">Event Planning</p>
   <h1>Saronic Event Tool</h1>
@@ -46,4 +49,7 @@
     <div class="pending-note">No events yet — create your first one above and the
     tool will stage the decision chain (event type → audience → venue) for you.</div>
   {% endif %}
+  <p class="mt-xl muted">
+    <a class="link-accent" href="/usage">Usage &amp; spend</a>
+  </p>
 {% endblock %}

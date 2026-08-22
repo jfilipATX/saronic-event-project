@@ -86,7 +86,8 @@ def _fallback(name: str, city: Optional[str], audience: Optional[int]) -> SlideC
 def generate_title_copy(client, name: str, city: Optional[str] = None,
                         event_type: Optional[str] = None,
                         audience: Optional[int] = None,
-                        venue: Optional[str] = None) -> SlideCopy:
+                        venue: Optional[str] = None,
+                        event_id=None) -> SlideCopy:
     """Ask Claude for title copy, degrading to deterministic text on any problem.
 
     ``client`` may be None (no Claude configured), the mock client, or the real
@@ -104,6 +105,8 @@ def generate_title_copy(client, name: str, city: Optional[str] = None,
             # before emitting text; too small a budget yields an empty response.
             max_tokens=2000,
             temperature=0.6,
+            event_id=event_id,
+            surface="slide_copy",
         )
     except Exception:
         # Budget, rate limit, bad key, or anything unforeseen: the deck still

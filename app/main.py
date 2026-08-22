@@ -67,7 +67,7 @@ _NAV = (
 CURRENT_DB = "events.db"
 
 
-def _scrape_client():
+def _scrape_client(conn=None):
     """Claude client for URL extraction, or None when real Claude is off.
 
     A separate seam from the deck's client so tests can stub extraction without
@@ -77,7 +77,11 @@ def _scrape_client():
     from app.config import load_config
 
     cfg = load_config()
-    return get_client(cfg) if cfg.claude_enabled else None
+    if not cfg.claude_enabled:
+        return None
+    from app.claude.ledger import SpendLedger
+
+    return get_client(cfg, ledger=SpendLedger(conn) if conn is not None else None)
 
 
 def _signing_secret() -> str:
@@ -296,6 +300,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         if not event_url.strip():
             problem = "Enter an event URL, or fill in the details manually below."
         else:
+            ledger_conn = connect()
             try:
                 result = fetch_url(event_url)
             except UnsafeUrlError as exc:
@@ -309,7 +314,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                     problem = result.error
                 else:
                     source_url = result.final_url
-                    facts = extract_facts(_scrape_client(), result.text,
+                    client = _scrape_client(ledger_conn)
+                    facts = extract_facts(client, result.text,
                                           source_url=source_url)
                     options = build_fact_options(facts)
                     if not options:
@@ -317,6 +323,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                             "Nothing could be extracted from that page. Enter the "
                             "details manually below."
                         )
+            ledger_conn.close()
         return templates.TemplateResponse(request, "scrape_confirm.html", {
             "event": None,
             "steps": [],
@@ -474,6 +481,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "sections": sections,
                 "event_id": event_id,
                 "markdown_url": f"/events/{event_id}/playbook.md",
+                "claude_spend": repo.spend_total(conn, event_id=event_id),
             })
         finally:
             conn.close()
@@ -558,9 +566,13 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         # Only hand the deck a client when real Claude is explicitly enabled.
         # In mock mode the deck uses deterministic copy rather than rendering
         # mock scaffolding onto a title slide.
-        claude = get_client(CONFIG) if CONFIG.claude_enabled else None
+        claude = None
+        if CONFIG.claude_enabled:
+            from app.claude.ledger import SpendLedger
+
+            claude = get_client(CONFIG, ledger=SpendLedger(conn))
         return build_deck(compose_playbook(conn, event_id), ImageResolver(stock),
-                          claude_client=claude)
+                          claude_client=claude, event_id=event_id)
 
     @app.get("/events/{event_id}/slides", response_class=HTMLResponse)
     def slides_view(request: Request, event_id: int):
@@ -584,6 +596,26 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    # ── spend ledger (P3-1) ──────────────────────────────────────────────────
+
+    @app.get("/usage", response_class=HTMLResponse)
+    def usage_view(request: Request):
+        """Global Claude API spend. Bookkeeping, not a dashboard."""
+        conn = connect()
+        try:
+            names = {e.id: e.name for e in repo.list_events(conn)}
+            entries = repo.spend_entries(conn)
+            return templates.TemplateResponse(request, "usage.html", {
+                "event": None,
+                "steps": [],
+                "entries": [e for e in entries if e.event_id is not None],
+                "unattributed": [e for e in entries if e.event_id is None],
+                "event_names": names,
+                "total": repo.spend_total(conn),
+            })
         finally:
             conn.close()
 

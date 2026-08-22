@@ -65,6 +65,30 @@ class EventVariable:
 
 
 @dataclass
+class SpendEntry:
+    """One Claude API call, priced (P3-1).
+
+    ``event_id`` is None for calls not tied to an event (model probes, harness
+    runs). They are logged anyway: a ledger that only records the attributable
+    part does not reconcile with the bill.
+
+    ``error`` records why a call was unusable. A call that failed before billing
+    carries usd=0; a call that billed and returned nothing usable carries its
+    real cost, because an empty response is our bug, not a discount.
+    """
+
+    id: Optional[int] = None
+    event_id: Optional[int] = None
+    surface: str = ""
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usd: float = 0.0
+    error: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+@dataclass
 class VipAlert:
     """A VIP arrival the coordinator should know about (P2-5).
 

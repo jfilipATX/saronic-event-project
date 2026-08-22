@@ -68,11 +68,15 @@ class MockClaudeClient(ClaudeClient):
 class RealClaudeClient(ClaudeClient):
     """Real Anthropic-backed client. Imports the SDK lazily (server-side only)."""
 
-    def __init__(self, config: Config, meter: SpendMeter) -> None:
+    def __init__(self, config: Config, meter: SpendMeter, ledger=None) -> None:
         if not config.anthropic_api_key:
             raise ExpiredKeyError()
         self._config = config
         self._meter = meter
+        #: Optional persistent ledger (P3-1). Optional so the client stays
+        #: usable without a database, but wired at this one gateway so no
+        #: surface can spend without being recorded.
+        self._ledger = ledger
         self._model = config.anthropic_model
         self._sdk = None  # lazily set on first use
         self._temp_ok: bool | None = None  # SDK capability, detected once
@@ -106,8 +110,20 @@ class RealClaudeClient(ClaudeClient):
                 self._temp_ok = False
         return self._temp_ok
 
+    def _log(self, *, surface, event_id, usd=0.0, input_tokens=0,
+             output_tokens=0, error=None) -> None:
+        if self._ledger is None or not surface:
+            return
+        try:
+            self._ledger.record(
+                surface=surface, model=self._model, event_id=event_id,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                usd=usd, error=error)
+        except Exception:  # noqa: BLE001 - bookkeeping must never break a call
+            pass
+
     def complete(self, *, system: str, prompt: str, max_tokens: int = 1024,
-                 temperature: float = 0.3) -> str:
+                 temperature: float = 0.3, event_id=None, surface: str = "") -> str:
         # Guard spend BEFORE the network call.
         self._meter.ensure_budget()
         sdk = self._get_sdk()
@@ -129,14 +145,19 @@ class RealClaudeClient(ClaudeClient):
                 if err.retryable and attempt <= 3:
                     time.sleep(min(2 ** attempt, 30))
                     continue
+                # Nothing billed: the call never completed. Logged at $0 so the
+                # ledger shows the attempt without inventing a cost.
+                self._log(surface=surface, event_id=event_id, usd=0.0,
+                          error=type(err).__name__)
                 raise err
             # Record spend (exact if provided, else estimate).
             usage = getattr(resp, "usage", None)
+            billed_in = getattr(usage, "input_tokens", 0) if usage else 0
+            billed_out = getattr(usage, "output_tokens", 0) if usage else 0
+            before = self._meter.spent
             if usage is not None:
-                self._meter.record(
-                    input_tokens=getattr(usage, "input_tokens", 0),
-                    output_tokens=getattr(usage, "output_tokens", 0),
-                )
+                self._meter.record(input_tokens=billed_in, output_tokens=billed_out)
+            call_usd = round(self._meter.spent - before, 6)
             text = "".join(
                 block.text for block in resp.content
                 if getattr(block, "type", "") == "text"
@@ -148,7 +169,16 @@ class RealClaudeClient(ClaudeClient):
                 # would look like success and ship a blank slide. Fail loudly.
                 stop = getattr(resp, "stop_reason", None)
                 kinds = sorted({getattr(b, "type", "?") for b in resp.content})
+                # This one BILLED and gave us nothing usable. Logging its real
+                # cost is the point: an empty response is our bug, not a
+                # discount, and hiding it would make the ledger disagree with
+                # the invoice.
+                self._log(surface=surface, event_id=event_id, usd=call_usd,
+                          input_tokens=billed_in, output_tokens=billed_out,
+                          error="EmptyResponseError")
                 raise EmptyResponseError(stop_reason=stop, block_types=kinds)
+            self._log(surface=surface, event_id=event_id, usd=call_usd,
+                      input_tokens=billed_in, output_tokens=billed_out)
             return text
 
     def _map_error(self, exc: Exception) -> ClaudeError:
@@ -172,7 +202,8 @@ class RealClaudeClient(ClaudeClient):
 
 
 def get_client(config: Config | None = None,
-               meter: SpendMeter | None = None) -> ClaudeClient:
+               meter: SpendMeter | None = None,
+               ledger=None) -> ClaudeClient:
     """Factory: returns a Mock client unless real Claude is explicitly enabled.
 
     This is the ONE function features call — they never instantiate the real SDK
@@ -182,5 +213,7 @@ def get_client(config: Config | None = None,
     if meter is None:
         meter = SpendMeter(limit_usd=cfg.anthropic_spend_limit)
     if cfg.claude_enabled:
-        return RealClaudeClient(cfg, meter)
+        return RealClaudeClient(cfg, meter, ledger=ledger)
+    # Mock mode costs nothing and must never write to the ledger: a fabricated
+    # cost would corrupt the one number this feature exists to report.
     return MockClaudeClient(meter)

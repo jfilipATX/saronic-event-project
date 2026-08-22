@@ -285,3 +285,77 @@ class TestPressKitPathIsCanonical:
             importlib.reload(images)
             importlib.reload(visuals)
             visuals._PRODUCT_CACHE.clear()
+
+
+class TestVariantDIdentity:
+    """D is the zero-upload variant every offline event ships, so it must be
+    distinctive rather than 'B without a photo'. Spec: large symbol watermark at
+    8% opacity upper-right, plus one signal-blue slash rule.
+    """
+
+    def test_d_places_a_large_symbol_watermark(self, request_no_city):
+        result = render_variant(request_no_city, "D")
+        assert result.watermark_box is not None
+        left, top, right, bottom = result.watermark_box
+        assert (right - left) >= 400, "watermark should read as a large mark"
+
+    def test_the_watermark_sits_upper_right(self, request_no_city):
+        result = render_variant(request_no_city, "D")
+        left, top, right, bottom = result.watermark_box
+        assert left > CANVAS_16X9[0] * 0.45
+        assert top < CANVAS_16X9[1] * 0.45
+
+    def test_the_watermark_is_faint(self, request_no_city):
+        result = render_variant(request_no_city, "D")
+        assert 0 < result.watermark_opacity <= 0.12
+
+    def test_d_draws_one_slash_rule(self, request_no_city):
+        result = render_variant(request_no_city, "D")
+        assert result.slash_box is not None
+
+    def test_the_slash_is_signal_blue(self, request_no_city):
+        from app.features.visuals import SIGNAL
+
+        result = render_variant(request_no_city, "D")
+        with Image.open(result.path_16x9) as im:
+            px = im.convert("RGB").load()
+            left, top, right, bottom = result.slash_box
+            found = any(
+                abs(px[x, y][0] - SIGNAL[0]) < 30
+                and abs(px[x, y][2] - SIGNAL[2]) < 30
+                for x in range(left, right, 3)
+                for y in range(top, bottom, 3)
+            )
+        assert found, "no signal-blue pixels in the slash region"
+
+    def test_the_slash_never_crosses_the_text_lockup(self, request_no_city):
+        """Decorative only — it must not run through the headline."""
+        result = render_variant(request_no_city, "D")
+        sl, st, sr, sb = result.slash_box
+        for tl, tt, tr, tb in result.text_boxes:
+            overlaps = not (sr < tl or sl > tr or sb < tt or st > tb)
+            assert not overlaps, "slash crosses a text box"
+
+    def test_the_watermark_does_not_break_headline_contrast(self, request_no_city):
+        """Designer's ask: prove it, do not assume the 8% is harmless."""
+        result = render_variant(request_no_city, "D")
+        with Image.open(result.path_16x9) as im:
+            bg = sample_region_luminance(im, result.headline_box)
+        assert contrast_ratio(result.headline_luminance, bg) >= 4.5
+
+    def test_a_two_line_headline_still_clears_contrast_under_the_watermark(
+            self, tmp_path):
+        req = VisualRequest(
+            event_name="Saronic International Autonomous Maritime Systems Expo",
+            city="Rotterdam", out_dir=str(tmp_path / "out"))
+        result = render_variant(req, "D")
+        assert len(result.text_boxes) >= 2
+        with Image.open(result.path_16x9) as im:
+            bg = sample_region_luminance(im, result.headline_box)
+        assert contrast_ratio(result.headline_luminance, bg) >= 4.5
+
+    def test_other_variants_have_no_watermark(self, request_with_city):
+        for variant in ("A", "B", "C"):
+            result = render_variant(request_with_city, variant)
+            if result is not None:
+                assert result.watermark_box is None
