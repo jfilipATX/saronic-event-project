@@ -15,6 +15,19 @@ CREATE TABLE IF NOT EXISTS events (
     ends_at       TEXT
 );
 
+-- P5-2: flexible / multi-day dates. An event is one or more calendar days,
+-- each with an optional open/close hour (times optional while scoping). The
+-- legacy starts_at/ends_at columns stay populated for backward compatibility
+-- (board/playbook/slides read a window), derived from day 1 / last day.
+CREATE TABLE IF NOT EXISTS event_days (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    day_index INTEGER NOT NULL,
+    date     TEXT NOT NULL,
+    open     TEXT,
+    close    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS attendees (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id        INTEGER NOT NULL,

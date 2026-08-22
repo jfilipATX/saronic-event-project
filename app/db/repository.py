@@ -552,7 +552,35 @@ def set_event_window(conn: sqlite3.Connection, event_id: int, window) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# P4-1 — coordinator-added venues (scraped from a URL)
+# P5-2 — flexible / multi-day dates (event_days table)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def replace_event_days(conn: sqlite3.Connection, event_id: int,
+                       days: list) -> None:
+    """Replace an event's day windows. Delegates the DB write and the legacy
+    span sync to schedule.py so the model logic stays in one place."""
+    import app.features.schedule as sched
+
+    conn.execute("DELETE FROM event_days WHERE event_id=?", (event_id,))
+    for day in days:
+        conn.execute(
+            "INSERT INTO event_days (event_id, day_index, date, open, close) "
+            "VALUES (?,?,?,?,?)",
+            (event_id, day.day_index, day.date, day.open, day.close),
+        )
+    sched._sync_legacy_span(conn, event_id, days)
+
+
+def event_days(conn: sqlite3.Connection, event_id: int) -> list:
+    """Raw day windows in ordinal order."""
+    from app.features.schedule import DayWindow
+
+    rows = conn.execute(
+        "SELECT date, open, close, day_index FROM event_days "
+        "WHERE event_id=? ORDER BY day_index", (event_id,)).fetchall()
+    return [DayWindow(date=r["date"], open=r["open"], close=r["close"],
+                      day_index=r["day_index"]) for r in rows]
 # ─────────────────────────────────────────────────────────────────────────────
 
 

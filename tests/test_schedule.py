@@ -148,59 +148,62 @@ class TestUi:
 
     def test_the_create_form_offers_dates(self, client):
         page = client.get("/").text
-        assert 'name="starts_at"' in page and 'name="ends_at"' in page
+        # The create form sets name+city+state+country; detailed dates are set
+        # on the schedule screen, which uses per-day rows.
+        assert 'name="city"' in page
+
+    def _make(self, client, **extra):
+        r = client.post("/events", data={"name": "Fleet Week", "city": "Austin",
+                                         "state": "TX", "country": "US", **extra},
+                        follow_redirects=False)
+        return int(r.headers["location"].rstrip("/").split("/")[2])
 
     def test_creating_with_dates_stores_them(self, client):
-        r = client.post("/events", data={
-            "name": "Fleet Week", "city": "Austin",
-            "starts_at": "2026-03-14T08:00", "ends_at": "2026-03-16T18:00",
-        }, follow_redirects=False)
-        eid = int(r.headers["location"].rstrip("/").split("/")[2])
-        assert "March" in client.get(f"/events/{eid}/schedule").text
+        eid = self._make(client)
+        client.post(f"/events/{eid}/schedule", data={
+            "day_0_date": "2026-03-14", "day_0_open": "08:00",
+            "day_1_date": "2026-03-15", "day_1_open": "09:00",
+            "day_2_date": "2026-03-16", "day_2_open": "10:00",
+        })
+        text = client.get(f"/events/{eid}/schedule").text
+        assert "March" in text and "14" in text and "16" in text
 
     def test_creating_without_dates_still_works(self, client):
-        r = client.post("/events", data={"name": "Undated", "city": "Austin"},
-                        follow_redirects=False)
+        r = client.post("/events", data={"name": "Undated", "city": "Austin",
+                                         "country": "US"}, follow_redirects=False)
         assert r.status_code in (302, 303)
 
     def test_a_backwards_window_is_refused_with_a_reason(self, client):
-        r = client.post("/events", data={
-            "name": "Backwards", "city": "Austin",
-            "starts_at": "2026-03-16T08:00", "ends_at": "2026-03-14T08:00",
-        })
-        assert r.status_code == 400
+        # A day that closes before it opens is refused at the schedule step.
+        eid = self._make(client)
+        r = client.post(f"/events/{eid}/schedule", data={
+            "day_0_date": "2026-03-14", "day_0_open": "18:00", "day_0_close": "08:00"})
         assert "before" in r.text.lower()
 
     def test_dates_can_be_edited_later(self, client):
-        r = client.post("/events", data={"name": "E", "city": "Austin"},
-                        follow_redirects=False)
-        eid = int(r.headers["location"].rstrip("/").split("/")[2])
+        eid = self._make(client)
         client.post(f"/events/{eid}/schedule", data={
-            "starts_at": "2026-05-01T09:00", "ends_at": "2026-05-02T17:00"})
+            "day_0_date": "2026-05-01", "day_0_open": "09:00", "day_0_close": "17:00"})
         assert "May" in client.get(f"/events/{eid}/schedule").text
 
     def test_an_invalid_edit_does_not_destroy_the_existing_window(self, client):
-        r = client.post("/events", data={
-            "name": "E", "city": "Austin",
-            "starts_at": "2026-03-14T08:00", "ends_at": "2026-03-16T18:00",
-        }, follow_redirects=False)
-        eid = int(r.headers["location"].rstrip("/").split("/")[2])
+        eid = self._make(client)
         client.post(f"/events/{eid}/schedule", data={
-            "starts_at": "2026-03-16T08:00", "ends_at": "2026-03-14T08:00"})
+            "day_0_date": "2026-03-14", "day_0_open": "08:00", "day_0_close": "18:00"})
+        # Submit a bad day (closes before opens) — must keep the good one.
+        client.post(f"/events/{eid}/schedule", data={
+            "day_0_date": "2026-03-16", "day_0_open": "18:00", "day_0_close": "08:00"})
         assert "March" in client.get(f"/events/{eid}/schedule").text
 
     def test_the_playbook_states_the_window(self, client):
-        r = client.post("/events", data={
-            "name": "Fleet Week", "city": "Austin",
-            "starts_at": "2026-03-14T08:00", "ends_at": "2026-03-16T18:00",
-        }, follow_redirects=False)
-        eid = int(r.headers["location"].rstrip("/").split("/")[2])
+        eid = self._make(client)
+        client.post(f"/events/{eid}/schedule", data={
+            "day_0_date": "2026-03-14", "day_0_open": "08:00", "day_0_close": "18:00",
+            "day_1_date": "2026-03-16", "day_1_open": "09:00", "day_1_close": "17:00"})
         assert "March" in client.get(f"/events/{eid}/playbook").text
 
     def test_an_unscheduled_event_says_so_rather_than_hiding_it(self, client):
-        r = client.post("/events", data={"name": "E", "city": "Austin"},
-                        follow_redirects=False)
-        eid = int(r.headers["location"].rstrip("/").split("/")[2])
+        eid = self._make(client)
         assert "not scheduled" in client.get(f"/events/{eid}/schedule").text.lower()
 
 

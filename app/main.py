@@ -66,7 +66,8 @@ from app.features.run_of_show import (
     validate_segment,
 )
 from app.features.schedule import (
-    describe_window,
+    describe_schedule,
+    event_day_windows,
     parse_window,
     window_for_event,
 )
@@ -550,7 +551,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "event_id": event_id,
                 "markdown_url": f"/events/{event_id}/playbook.md",
                 "claude_spend": repo.spend_total(conn, event_id=event_id),
-                "schedule": describe_window(window_for_event(conn, event_id)),
+                "schedule": describe_schedule(conn, event_id),
             })
         finally:
             conn.close()
@@ -802,7 +803,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "tracks": sorted({s.track for s in segments} | set(DEFAULT_TRACKS)),
             "kinds": [(k, KIND_LABELS[k]) for k in SEGMENT_KINDS],
             "window": window,
-            "schedule_text": describe_window(window),
+            "schedule_text": describe_schedule(conn, event_id),
             "view": view,
             "problem": problem,
             "form": form or {},
@@ -989,15 +990,56 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
 
     # ── event schedule (P4-3) ────────────────────────────────────────────────
 
+    def _parse_day_form(form) -> list:
+        """Build DayWindow list from the schedule form.
+
+        The form sends repeated day_N_date / day_N_open / day_N_close fields.
+        A day with a date but blank hours is valid (times optional). A day with
+        no date is skipped. Raises ValueError with a readable message on a bad
+        hour or an end-before-start within a day.
+        """
+        from app.features.schedule import DayWindow, _looks_like_hour
+
+        days: list = []
+        i = 0
+        while True:
+            date = (form.get(f"day_{i}_date") or "").strip()
+            if not date and i >= 20:
+                break
+            if not date:
+                i += 1
+                if i >= 20:
+                    break
+                continue
+            open_h = (form.get(f"day_{i}_open") or "").strip() or None
+            close_h = (form.get(f"day_{i}_close") or "").strip() or None
+            if open_h and not _looks_like_hour(open_h):
+                raise ValueError(
+                    f"Day {i + 1} open time '{open_h}' is not a time (HH:MM).")
+            if close_h and not _looks_like_hour(close_h):
+                raise ValueError(
+                    f"Day {i + 1} close time '{close_h}' is not a time (HH:MM).")
+            if open_h and close_h and close_h <= open_h:
+                raise ValueError(
+                    f"Day {i + 1} cannot close ({close_h}) before it opens "
+                    f"({open_h}).")
+            days.append(DayWindow(date=date, open=open_h, close=close_h,
+                                  day_index=len(days)))
+            i += 1
+            if i >= 20:
+                break
+        return days
+
     def _schedule_page(request: Request, conn, event_id: int, event,
-                       problem: str = ""):
-        window = window_for_event(conn, event_id)
+                       problem: str = "", days=None):
+        if days is None:
+            days = event_day_windows(conn, event_id)
         return templates.TemplateResponse(request, "schedule.html", {
             "event": event,
             "steps": nav_steps(conn, event_id, None),
             "event_id": event_id,
-            "window": window,
-            "description": describe_window(window),
+            "days": days,
+            "description": describe_schedule(conn, event_id),
             "problem": problem,
         })
 
@@ -1010,19 +1052,20 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             conn.close()
 
     @app.post("/events/{event_id}/schedule", response_class=HTMLResponse)
-    def schedule_set(request: Request, event_id: int,
-                     starts_at: str = Form(""), ends_at: str = Form("")):
+    async def schedule_set(request: Request, event_id: int):
         conn = connect()
         try:
             event = load_event(conn, event_id)
+            form = await request.form()
             try:
-                window = parse_window(starts_at, ends_at)
+                days = _parse_day_form(form)
             except ValueError as exc:
-                # Re-render with the reason and the EXISTING window intact: a
+                # Re-render with the reason and the EXISTING days intact: a
                 # rejected edit must never destroy a schedule that was correct.
                 return _schedule_page(request, conn, event_id, event,
-                                      problem=str(exc))
-            repo.set_event_window(conn, event_id, window)
+                                      problem=str(exc),
+                                      days=repo.event_days(conn, event_id))
+            repo.replace_event_days(conn, event_id, days)
             conn.commit()
             return _schedule_page(request, conn, event_id, event)
         finally:
