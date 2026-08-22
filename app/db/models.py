@@ -94,15 +94,22 @@ class LibraryImage:
 
 
 @dataclass
-class Staff:
-    """A person who owns part of the run of show (P4-4).
+class Person:
+    """A reusable staff member in the global people pool (P5-5).
 
-    PII-scoped exactly like Attendee: erasure anonymises rather than deletes,
-    because who was on shift is a safety record.
+    One entry per human, independent of any event. An event attaches a person
+    via ``event_staff``; the person's id is stable across events so a run-of-show
+    segment that records an owner keeps pointing at the same human wherever they
+    appear. PII-scoped exactly like Attendee: erasure anonymises rather than
+    deletes, because who was on shift is a safety record.
+
+    ``role`` persists across events (it pre-fills the title when the person is
+    re-added to a new event). The ability to run check-in is NOT stored here
+    — it is a per-event grant on the ``event_staff`` join, because being
+    check-in staff on one event must not grant it on another.
     """
 
     id: Optional[int] = None
-    event_id: int = 0
     name: Optional[str] = None
     role: Optional[str] = None
     erased_at: Optional[str] = None

@@ -23,7 +23,7 @@ import sqlite3
 import pytest
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Event, Segment, Staff
+from app.db.models import Event, Person, Segment
 from app.features.run_of_show import (
     DEFAULT_TRACKS,
     SEGMENT_KINDS,
@@ -55,12 +55,14 @@ def event(conn) -> int:
 
 @pytest.fixture()
 def staff(conn, event) -> dict:
-    return {
-        name: repo.add_staff(conn, Staff(event_id=event, name=name, role=role))
-        for name, role in (("Dana Reyes", "Booth lead"),
-                           ("Sam Okoye", "A/V"),
-                           ("Ada Fournier", "Logistics"))
-    }
+    out = {}
+    for name, role in (("Dana Reyes", "Booth lead"),
+                       ("Sam Okoye", "A/V"),
+                       ("Ada Fournier", "Logistics")):
+        pid = repo.add_person(conn, Person(name=name, role=role))
+        repo.assign_staff(conn, event, pid, role=role)
+        out[name] = pid
+    return out
 
 
 def _seg(event_id, title, start, end, track="Logistics", kind="logistics",
@@ -70,20 +72,31 @@ def _seg(event_id, title, start, end, track="Logistics", kind="logistics",
 
 
 class TestStaff:
-    def test_staff_can_be_added_and_listed(self, conn, event):
-        repo.add_staff(conn, Staff(event_id=event, name="Dana Reyes",
-                                   role="Booth lead"))
-        people = repo.list_staff(conn, event)
-        assert [p.name for p in people] == ["Dana Reyes"]
+    """The pool is global; event membership is a join (P5-5)."""
 
-    def test_a_staff_member_needs_a_name(self, conn, event):
-        with pytest.raises(ValueError, match="name"):
-            repo.add_staff(conn, Staff(event_id=event, name="  ", role="X"))
+    def test_a_person_is_added_to_the_global_pool(self, conn, event):
+        pid = repo.add_person(conn, Person(name="Dana Reyes", role="Booth lead"))
+        assert [p.name for p in repo.list_people(conn)] == ["Dana Reyes"]
 
-    def test_staff_do_not_leak_between_events(self, conn, event):
+    def test_assigning_to_an_event_is_a_join_not_a_copy(self, conn, event):
+        pid = repo.add_person(conn, Person(name="Dana Reyes", role="Booth lead"))
+        repo.assign_staff(conn, event, pid, role="Booth lead")
         other = repo.create_event(conn, Event(name="Other", city="Austin"))
-        repo.add_staff(conn, Staff(event_id=event, name="Dana", role="Lead"))
-        assert repo.list_staff(conn, other) == []
+        repo.assign_staff(conn, other, pid)
+        # Same person id, one pool entry, two event assignments.
+        assert [p.id for p in repo.list_people(conn)] == [pid]
+        assert repo.event_staff(conn, event) == [pid]
+        assert repo.event_staff(conn, other) == [pid]
+
+    def test_a_person_needs_a_name(self, conn, event):
+        with pytest.raises(ValueError, match="name"):
+            repo.add_person(conn, Person(name="  ", role="X"))
+
+    def test_event_assignment_is_not_shared_unless_added(self, conn, event):
+        other = repo.create_event(conn, Event(name="Other", city="Austin"))
+        pid = repo.add_person(conn, Person(name="Dana", role="Lead"))
+        repo.assign_staff(conn, event, pid)
+        assert repo.event_staff(conn, other) == []
 
 
 class TestSegments:
@@ -328,33 +341,33 @@ class TestStaffErasure:
         dana = staff["Dana Reyes"]
         repo.add_segment(conn, _seg(event, "Booth", "2026-03-14T09:00",
                                     "2026-03-14T17:00", owners=[dana]))
-        repo.erase_staff(conn, dana)
+        repo.erase_person(conn, dana)
         assert len(repo.list_segments(conn, event)) == 1
 
     def test_the_name_is_gone_everywhere(self, conn, event, staff):
         dana = staff["Dana Reyes"]
         repo.add_segment(conn, _seg(event, "Booth", "2026-03-14T09:00",
                                     "2026-03-14T17:00", owners=[dana]))
-        repo.erase_staff(conn, dana)
+        repo.erase_person(conn, dana)
         dump = "\n".join(
             "|".join(str(v) for v in row)
-            for table in ("staff", "segments")
+            for table in ("people", "segments")
             for row in conn.execute(f"SELECT * FROM {table}")
         )
         assert "Dana Reyes" not in dump
 
     def test_the_chip_reads_as_removed_not_blank(self, conn, event, staff):
         dana = staff["Dana Reyes"]
-        repo.erase_staff(conn, dana)
-        person = repo.get_staff(conn, dana)
+        repo.erase_person(conn, dana)
+        person = repo.get_person(conn, dana)
         assert person.is_erased
         assert "removed" in person.display_name.lower()
 
     def test_erasure_cannot_be_undone(self, conn, event, staff):
         dana = staff["Dana Reyes"]
-        repo.erase_staff(conn, dana)
+        repo.erase_person(conn, dana)
         with pytest.raises(ValueError, match="erased"):
-            repo.erase_staff(conn, dana)
+            repo.erase_person(conn, dana)
 
 
 class TestKindsAndColour:
@@ -383,7 +396,7 @@ class TestRunOfShowUi:
         return int(r.headers["location"].rstrip("/").split("/")[2])
 
     def _staff(self, client, eid, name, role="Lead"):
-        client.post(f"/events/{eid}/run-of-show/staff",
+        client.post(f"/events/{eid}/run-of-show/staff/assign",
                     data={"name": name, "role": role}, follow_redirects=False)
         import sqlite3
 
@@ -392,7 +405,10 @@ class TestRunOfShowUi:
         conn = sqlite3.connect(main_mod.CURRENT_DB)
         conn.row_factory = sqlite3.Row
         try:
-            return [p for p in repo.list_staff(conn, eid) if p.name == name][0].id
+            # People are global; find by name in the pool.
+            return conn.execute(
+                "SELECT id FROM people WHERE name=? AND erased_at IS NULL",
+                (name,)).fetchone()["id"]
         finally:
             conn.close()
 

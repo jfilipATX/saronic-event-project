@@ -91,16 +91,31 @@ CREATE TABLE IF NOT EXISTS library_images (
 
 CREATE INDEX IF NOT EXISTS idx_library_event ON library_images(event_id);
 
-CREATE TABLE IF NOT EXISTS staff (
+CREATE TABLE IF NOT EXISTS people (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id   INTEGER NOT NULL,
     name       TEXT,
     role       TEXT,
     erased_at  TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_staff_event ON staff(event_id);
+CREATE INDEX IF NOT EXISTS idx_people_name ON people(name);
+
+-- Per-event membership of the global people pool (P5-9/P5-5). A person is
+-- global; this join records which events they are staffed on, an optional
+-- local role title override, and can_check_in — the per-event capability to
+-- run the check-in view. can_check_in is deliberately NOT on people: a person
+-- granted check-in on Event A must not be implicitly check-in on Event B.
+CREATE TABLE IF NOT EXISTS event_staff (
+    event_id     INTEGER NOT NULL,
+    person_id    INTEGER NOT NULL,
+    role         TEXT,
+    can_check_in INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id, person_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_staff_event ON event_staff(event_id);
+CREATE INDEX IF NOT EXISTS idx_event_staff_person ON event_staff(person_id);
 
 CREATE TABLE IF NOT EXISTS segments (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
