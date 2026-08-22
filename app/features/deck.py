@@ -45,7 +45,7 @@ def _image(resolver: ImageResolver, role: str, city: str = "") -> Optional[str]:
 
 
 def build_deck(playbook: Playbook, resolver: ImageResolver,
-               claude_client=None) -> Deck:
+               claude_client=None, event_id=None) -> Deck:
     """Compose the slide sequence for ``playbook``.
 
     ``claude_client`` is optional. When supplied, the title slide's copy is
@@ -72,6 +72,7 @@ def build_deck(playbook: Playbook, resolver: ImageResolver,
         event_type=ev.event_type,
         audience=ev.audience_estimate,
         venue=venue_label,
+        event_id=event_id,
     )
     # Attribution lives on the badge (copy_source), not in the note — repeating
     # it here made the note read like projected copy rather than direction.

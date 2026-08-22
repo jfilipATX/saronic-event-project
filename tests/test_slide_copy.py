@@ -28,7 +28,7 @@ class _Client:
         self.response = response
         self.calls = []
 
-    def complete(self, *, system, prompt, max_tokens=1024, temperature=0.3):
+    def complete(self, *, system, prompt, **kw):
         self.calls.append({"system": system, "prompt": prompt})
         return self.response
 

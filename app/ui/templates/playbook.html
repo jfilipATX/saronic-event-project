@@ -6,6 +6,15 @@
   <p class="eyebrow">Event Playbook</p>
   <h1>{{ event.name }}</h1>
 
+  {# An objective event fact, stated where the coordinator looks for facts.
+     Shown even at zero: absence of cost is also a fact. Labelled "Claude API"
+     because "event cost" would reasonably read as venue deposits. #}
+  <p class="muted">Claude API spend:
+    {% if claude_spend %}${{ "%.4f"|format(claude_spend) }}
+    {%- else %}none (ran offline){% endif %}
+    · <a class="link-accent" href="/usage">Usage &amp; spend</a>
+  </p>
+
   {% for section in sections %}
     <h2>{{ section.title }}</h2>
     {% if section.decision and not section.decision.is_pending %}

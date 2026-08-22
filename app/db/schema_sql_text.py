@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS spend_log (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER,
+    surface       TEXT NOT NULL,
+    model         TEXT NOT NULL,
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    usd           REAL NOT NULL DEFAULT 0,
+    error         TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_spend_event ON spend_log(event_id, id);
+
 CREATE TABLE IF NOT EXISTS vip_alerts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id      INTEGER NOT NULL,

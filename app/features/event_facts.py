@@ -120,7 +120,7 @@ def build_extraction_prompt(page_text: str) -> str:
     )
 
 
-def extract_facts(client, markup: str, source_url: str) -> List[ExtractedFact]:
+def extract_facts(client, markup: str, source_url: str, event_id=None) -> List[ExtractedFact]:
     """Ask Claude for the facts on the page. Never raises; returns [] on failure.
 
     A failed extraction is a detour to manual entry, not an error — so every
@@ -141,6 +141,8 @@ def extract_facts(client, markup: str, source_url: str) -> List[ExtractedFact]:
             # text is emitted; too small a budget returns nothing at all.
             max_tokens=2000,
             temperature=0.0,
+            event_id=event_id,
+            surface="url_extract",
         )
     except Exception:
         return []

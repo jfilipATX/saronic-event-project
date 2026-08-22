@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
 
 from app.db.models import (
-    Attendee, Decision, DecisionOption, Event, EventVariable, VenueUse, VipAlert,
+    Attendee, Decision, DecisionOption, Event, EventVariable, SpendEntry,
+    VenueUse, VipAlert,
 )
 from app.db import schema_sql_text as _sql
 
@@ -466,3 +467,58 @@ def get_attendee_by_email(conn: sqlite3.Connection, event_id: int,
         (event_id, email.strip()),
     ).fetchone()
     return _row_to_attendee(row) if row else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P3-1 — Claude spend ledger
+#
+# Persistent, unlike the per-process SpendMeter. The meter enforces a cap within
+# one run; this answers "what did planning this event cost?" across all of them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def record_spend(conn: sqlite3.Connection, entry: SpendEntry) -> int:
+    cur = conn.execute(
+        "INSERT INTO spend_log (event_id, surface, model, input_tokens, "
+        "output_tokens, usd, error) VALUES (?,?,?,?,?,?,?)",
+        (entry.event_id, entry.surface, entry.model, entry.input_tokens,
+         entry.output_tokens, float(entry.usd), entry.error),
+    )
+    return int(cur.lastrowid)
+
+
+def spend_entries(conn: sqlite3.Connection,
+                  event_id: Optional[int] = None) -> List[SpendEntry]:
+    """Ledger rows, newest first. Omit ``event_id`` for everything."""
+    sql_text = ("SELECT id, event_id, surface, model, input_tokens, "
+                "output_tokens, usd, error, created_at FROM spend_log")
+    params: tuple = ()
+    if event_id is not None:
+        sql_text += " WHERE event_id=?"
+        params = (event_id,)
+    sql_text += " ORDER BY id DESC"
+    return [SpendEntry(**dict(r)) for r in conn.execute(sql_text, params).fetchall()]
+
+
+def spend_total(conn: sqlite3.Connection, event_id: Optional[int] = None) -> float:
+    """Total USD. Omit ``event_id`` for the global figure, which includes
+    unattributed calls — otherwise the total would not reconcile with the bill."""
+    if event_id is None:
+        row = conn.execute("SELECT COALESCE(SUM(usd), 0) FROM spend_log").fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(usd), 0) FROM spend_log WHERE event_id=?",
+            (event_id,)).fetchone()
+    return round(float(row[0]), 4)
+
+
+def spend_by_surface(conn: sqlite3.Connection,
+                     event_id: Optional[int] = None) -> Dict[str, float]:
+    sql_text = "SELECT surface, COALESCE(SUM(usd), 0) FROM spend_log"
+    params: tuple = ()
+    if event_id is not None:
+        sql_text += " WHERE event_id=?"
+        params = (event_id,)
+    sql_text += " GROUP BY surface"
+    return {r[0]: round(float(r[1]), 4)
+            for r in conn.execute(sql_text, params).fetchall()}
