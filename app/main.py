@@ -22,10 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Attendee
+from app.db.models import Attendee, EventVariable
 from app.features.deck import build_deck, render_deck_markdown
+from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
+from app.features.url_fetch import fetch_url
+from app.features.url_guard import UnsafeUrlError
 from app.features.qr_checkin import (
     STATE_ALREADY,
     STATE_TAMPERED,
@@ -46,6 +49,19 @@ _NAV = (
 
 #: Set by create_app so helpers/tests can reach the active database.
 CURRENT_DB = "events.db"
+
+
+def _scrape_client():
+    """Claude client for URL extraction, or None when real Claude is off.
+
+    A separate seam from the deck's client so tests can stub extraction without
+    touching slide copy, and so mock mode never fabricates event facts.
+    """
+    from app.claude.client import get_client
+    from app.config import load_config
+
+    cfg = load_config()
+    return get_client(cfg) if cfg.claude_enabled else None
 
 
 def _signing_secret() -> str:
@@ -179,11 +195,82 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             {"event": None, "steps": [], "events": events},
         )
 
+    @app.post("/events/scrape", response_class=HTMLResponse)
+    def scrape_event_url(request: Request, event_url: str = Form("")):
+        """Fetch a URL and PROPOSE facts. Creates nothing.
+
+        Every failure path renders the same page with the manual form intact, so
+        a refused or broken URL costs the coordinator a detour, never the flow.
+        """
+        problem = ""
+        options = []
+        source_url = ""
+        if not event_url.strip():
+            problem = "Enter an event URL, or fill in the details manually below."
+        else:
+            try:
+                result = fetch_url(event_url)
+            except UnsafeUrlError as exc:
+                result = None
+                problem = (
+                    f"{exc} Couldn't fetch this URL safely — enter the details "
+                    "manually below."
+                )
+            if result is not None:
+                if not result.ok:
+                    problem = result.error
+                else:
+                    source_url = result.final_url
+                    facts = extract_facts(_scrape_client(), result.text,
+                                          source_url=source_url)
+                    options = build_fact_options(facts)
+                    if not options:
+                        problem = (
+                            "Nothing could be extracted from that page. Enter the "
+                            "details manually below."
+                        )
+        return templates.TemplateResponse(request, "scrape_confirm.html", {
+            "event": None,
+            "steps": [],
+            "options": options,
+            "source_url": source_url,
+            "event_url": event_url,
+            "problem": problem,
+        })
+
     @app.post("/events")
-    def create_event(name: str = Form(...), city: str = Form(...)):
+    async def create_event(request: Request):
+        """Create an event from confirmed values.
+
+        Reads the form directly: the confirmable fact fields are dynamic
+        (``fact_<field>``), and only what the coordinator actually submitted is
+        stored — nothing carries over from the scrape implicitly.
+        """
+        form = await request.form()
+        name = (form.get("name") or "").strip()
+        city = (form.get("city") or "").strip()
+        if not name or not city:
+            raise HTTPException(status_code=400,
+                                detail="An event needs a name and a city.")
+
         conn = connect()
         try:
             event_id = CoordinatorWorkflow(conn).start_event(name=name, city=city)
+            source_url = (form.get("source_url") or "").strip()
+            if source_url:
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind="source_url", value=source_url,
+                    notes="Event page the details were extracted from."))
+            for key, raw in form.items():
+                if not key.startswith("fact_"):
+                    continue
+                value = (raw or "").strip()
+                if not value:
+                    continue          # a blank field is a decision not to record it
+                repo.add_variable(conn, EventVariable(
+                    event_id=event_id, kind=key[len("fact_"):], value=value,
+                    notes=f"Confirmed by the coordinator from {source_url}"
+                          if source_url else "Entered by the coordinator."))
             conn.commit()
         finally:
             conn.close()

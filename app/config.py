@@ -70,8 +70,14 @@ class Config:
 
     @property
     def claude_enabled(self) -> bool:
-        """Whether the real Claude API may be called. Mock mode is always safe."""
-        return self.use_real_claude and bool(self.anthropic_api_key)
+        """Whether the real Claude API may be called. Mock mode is always safe.
+
+        ``.strip()`` matters: a key that is whitespace (or a template line left
+        as ``ANTHROPIC_API_KEY=`` with a trailing space) is a misconfiguration,
+        not a credential. Treating it as enabled turns an offline test run into
+        a slow network-dependent one, which is how this was found.
+        """
+        return self.use_real_claude and bool(self.anthropic_api_key.strip())
 
 
 def load_config() -> Config:

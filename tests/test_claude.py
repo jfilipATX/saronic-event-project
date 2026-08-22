@@ -221,6 +221,7 @@ class TestGetClientFactory:
         cfg = Config(anthropic_api_key="sk-test", use_real_claude=False)
         assert isinstance(get_client(cfg), MockClaudeClient)
 
+    @pytest.mark.real_claude_config
     def test_real_client_requires_both_the_flag_and_the_key(self):
         cfg = Config(anthropic_api_key="sk-test", use_real_claude=True)
         assert isinstance(get_client(cfg), RealClaudeClient)
@@ -291,3 +292,42 @@ class TestEmptyResponseIsNotSilentSuccess:
 
         out = _real(m, lambda c, k: _R()).complete(system="s", prompt="p")
         assert out == "the actual answer"
+
+
+@pytest.mark.real_claude_config
+class TestConfigRequiresAKeyNotJustAFlag:
+    """USE_REAL_CLAUDE=1 with an empty key must not enable real Claude.
+
+    Found when the suite jumped from 3s to 27s: every slides test was making a
+    real network call that failed slowly. A flag without a key is a
+    misconfiguration, and treating it as 'enabled' turns an offline test run into
+    a network-dependent one.
+    """
+
+    def test_flag_without_a_key_is_not_enabled(self, monkeypatch):
+        from app.config import load_config
+
+        monkeypatch.setenv("USE_REAL_CLAUDE", "1")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+        assert load_config().claude_enabled is False
+
+    def test_flag_with_a_whitespace_key_is_not_enabled(self, monkeypatch):
+        from app.config import load_config
+
+        monkeypatch.setenv("USE_REAL_CLAUDE", "1")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+        assert load_config().claude_enabled is False
+
+    def test_flag_with_a_real_key_is_enabled(self, monkeypatch):
+        from app.config import load_config
+
+        monkeypatch.setenv("USE_REAL_CLAUDE", "1")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 90)
+        assert load_config().claude_enabled is True
+
+    def test_key_without_the_flag_stays_disabled(self, monkeypatch):
+        from app.config import load_config
+
+        monkeypatch.setenv("USE_REAL_CLAUDE", "0")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-" + "x" * 90)
+        assert load_config().claude_enabled is False
