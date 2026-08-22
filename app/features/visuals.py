@@ -94,6 +94,12 @@ class VisualResult:
     text_boxes: List[Tuple[int, int, int, int]] = field(default_factory=list)
     cutout_box: Optional[Tuple[int, int, int, int]] = None
     cutout_mirrored: bool = False
+    #: Variant D only: the large faint symbol mark that gives D its identity.
+    watermark_box: Optional[Tuple[int, int, int, int]] = None
+    watermark_opacity: float = 0.0
+    #: Decorative slash rule at the logo angle. One per composition, never
+    #: crossing the text lockup.
+    slash_box: Optional[Tuple[int, int, int, int]] = None
     font_family: str = ""
     font_is_brand: bool = False
 
@@ -339,6 +345,26 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
                     top + block_height)
     headline_luminance = relative_luminance(NEUTRAL)
 
+    watermark_box = None
+    watermark_opacity = 0.0
+    if variant == "D":
+        symbol = _brand_mark(symbol=True)
+        if symbol is not None:
+            target = 480
+            scale = target / symbol.width
+            symbol = symbol.resize((target, max(1, int(symbol.height * scale))),
+                                   Image.LANCZOS)
+            watermark_opacity = 0.08
+            faded = symbol.copy()
+            alpha = faded.getchannel("A").point(
+                lambda a: int(a * watermark_opacity))
+            faded.putalpha(alpha)
+            wx = CANVAS_16X9[0] - target - SAFE_MARGIN
+            wy = SAFE_MARGIN
+            canvas.paste(faded, (wx, wy), faded)
+            watermark_box = (wx, wy, wx + target, wy + faded.height)
+            draw = ImageDraw.Draw(canvas)
+
     cutout_box = None
     if variant in ("B", "C"):
         product = _press_kit_product()
@@ -358,7 +384,7 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
     # headline, so measuring before pasting it measures the wrong picture.
     # Found by the computed-contrast test — B and C failed at 2.96:1 with the
     # scrim applied first, which is exactly the bug this check exists to catch.
-    if base_source != "ink" or cutout_box is not None:
+    if base_source != "ink" or cutout_box is not None or watermark_box is not None:
         canvas = _apply_scrim(canvas, headline_box, headline_luminance)
         draw = ImageDraw.Draw(canvas)
 
@@ -377,6 +403,24 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
         draw.text((SAFE_MARGIN, sub_y), request.dates, font=sub_font, fill=STEEL)
         text_boxes.append((SAFE_MARGIN, sub_y, int(SAFE_MARGIN + width),
                            sub_y + SUBLINE_SIZE))
+
+    slash_box = None
+    if variant == "D":
+        # Logo slash angle (~68 deg from horizontal), drawn in the band between
+        # the headline block and the brand mark so it can never cross the text.
+        # Sit it in the clear band below the text lockup, long enough to read
+        # as a deliberate rule rather than a stray mark. Bounded by the text
+        # bottom so it can never cross the lockup.
+        text_bottom = max(loc[3] for loc in text_boxes)
+        band_top = text_bottom + 60
+        band_bottom = CANVAS_16X9[1] - SAFE_MARGIN - 30
+        if band_bottom - band_top > 80:
+            rise = band_bottom - band_top
+            run = int(rise / 2.475)  # tan(68 deg) from the logo's slash angle
+            x0 = CANVAS_16X9[0] - SAFE_MARGIN - run - 40
+            draw.line([(x0, band_bottom), (x0 + run, band_top)],
+                      fill=SIGNAL, width=8)
+            slash_box = (x0, band_top, x0 + run + 8, band_bottom)
 
     mark = _brand_mark(symbol=(variant == "D"))
     if mark is not None:
@@ -400,6 +444,8 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
         base_source=base_source, template=template, headline_size=size,
         headline_luminance=headline_luminance, headline_box=headline_box,
         text_boxes=text_boxes, cutout_box=cutout_box, cutout_mirrored=False,
+        watermark_box=watermark_box, watermark_opacity=watermark_opacity,
+        slash_box=slash_box,
         font_family=family, font_is_brand=is_brand,
     )
 
