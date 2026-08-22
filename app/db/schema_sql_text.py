@@ -74,6 +74,22 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS library_images (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER NOT NULL,
+    path          TEXT NOT NULL,
+    source_url    TEXT NOT NULL,
+    article_title TEXT,
+    article_url   TEXT,
+    origin        TEXT NOT NULL DEFAULT 'uploaded',
+    width         INTEGER NOT NULL DEFAULT 0,
+    height        INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (event_id, source_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_library_event ON library_images(event_id);
+
 CREATE TABLE IF NOT EXISTS staff (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id   INTEGER NOT NULL,

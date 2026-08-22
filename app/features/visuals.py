@@ -78,6 +78,11 @@ class VisualRequest:
     dates: str = ""
     city_image: Optional[str] = None
     out_dir: str = "generated/visuals"
+    #: Where city_image came from: "uploaded" or "blog". Recorded rather than
+    #: assumed, so an exported composite can name the article its backdrop came
+    #: from — "it's our own imagery" is unverifiable six months later.
+    city_image_origin: str = "uploaded"
+    city_image_attribution: str = ""
 
 
 @dataclass
@@ -87,6 +92,7 @@ class VisualResult:
     path_1x1: str = ""
     sidecar_path: str = ""
     base_source: str = "ink"
+    base_attribution: str = ""
     template: str = ""
     headline_size: int = 0
     headline_luminance: float = 1.0
@@ -284,7 +290,8 @@ def _base_layer(request: VisualRequest, variant: str):
                     f"({raw.width}x{raw.height}; needs at least "
                     f"{MIN_UPLOAD[0]}x{MIN_UPLOAD[1]})."
                 )
-            return _cover_fit(raw.convert("RGB"), CANVAS_16X9), "uploaded"
+            return (_cover_fit(raw.convert("RGB"), CANVAS_16X9),
+                    request.city_image_origin or "uploaded")
     if variant == "B":
         product = _press_kit_product()
         if product is not None:
@@ -442,6 +449,8 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
     result = VisualResult(
         variant=variant, path_16x9=path_16x9, path_1x1=path_1x1,
         base_source=base_source, template=template, headline_size=size,
+        base_attribution=(request.city_image_attribution
+                          if base_source == request.city_image_origin else ""),
         headline_luminance=headline_luminance, headline_box=headline_box,
         text_boxes=text_boxes, cutout_box=cutout_box, cutout_mirrored=False,
         watermark_box=watermark_box, watermark_opacity=watermark_opacity,
@@ -454,6 +463,9 @@ def render_variant(request: VisualRequest, variant: str) -> Optional[VisualResul
         json.dump({
             "variant": variant,
             "base_source": base_source,
+            "base_attribution": (request.city_image_attribution
+                                 if base_source == request.city_image_origin
+                                 else ""),
             "template": template,
             "headline_size": size,
             "font_family": family,

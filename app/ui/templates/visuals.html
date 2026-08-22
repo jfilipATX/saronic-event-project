@@ -24,6 +24,51 @@
   <p class="muted">Images are composed when this page loads, which takes a few
   seconds the first time.</p>
 
+  <h2>Image library</h2>
+  <p class="muted">
+    Import lead images from Saronic's own blog — real vessels, trials and
+    announcements, owned outright. Each keeps a link back to its article, so an
+    exported composite can say where its backdrop came from.
+  </p>
+  <form method="post" action="/events/{{ event_id }}/visuals/library/import"
+        class="form-row">
+    <input class="input" type="url" name="blog_url"
+           value="https://medium.com/saronic-technologies">
+    <button class="btn-quiet" type="submit">Import from the blog</button>
+  </form>
+
+  {% if library %}
+    <ul class="library-strip">
+      {% for image in library %}
+        <li class="library-tile card-surface">
+          <img class="library-thumb"
+               src="/events/{{ event_id }}/visuals/library/{{ image.id }}.png"
+               alt="{{ image.article_title or 'Library image' }}">
+          <p class="option-reasoning">
+            {% if image.origin == 'blog' %}
+              From the blog:
+              <a class="link-accent" href="{{ image.article_url }}"
+                 target="_blank" rel="noopener">{{ image.article_title }}</a>
+            {% else %}
+              Uploaded
+            {% endif %}
+            <span class="muted">{{ image.width }}&times;{{ image.height }}</span>
+          </p>
+          <div class="option-actions">
+            <form method="post"
+                  action="/events/{{ event_id }}/visuals/library/{{ image.id }}/use">
+              <button class="btn-quiet" type="submit">Use as backdrop</button>
+            </form>
+            <form method="post"
+                  action="/events/{{ event_id }}/visuals/library/{{ image.id }}/delete">
+              <button class="btn-quiet" type="submit">Remove</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
   <h2>City photograph</h2>
   <p class="muted">
     A photo of the city or the venue itself makes the strongest backdrop — venue

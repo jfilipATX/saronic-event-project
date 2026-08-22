@@ -27,7 +27,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Attendee, EventVariable, Segment, Staff
+from app.db.models import (
+    Attendee,
+    EventVariable,
+    LibraryImage,
+    Segment,
+    Staff,
+)
 from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
@@ -39,6 +45,11 @@ from app.features.venue_scrape import (
     build_venue_options as build_scraped_options,
     extract_venue,
     venue_from_facts,
+)
+from app.features.image_library import (
+    fetch_feed,
+    fetch_image,
+    parse_feed,
 )
 from app.features.run_of_show import (
     DEFAULT_TRACKS,
@@ -956,6 +967,16 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                       problem: str = ""):
         playbook = compose_playbook(conn, event_id)
         upload = os.path.join(_visuals_dir(event_id), "city.png")
+        # Which library image is currently the backdrop, so provenance reaches
+        # the sidecar rather than defaulting to "uploaded".
+        origin, attribution = "uploaded", ""
+        for var in repo.list_variables(conn, event_id):
+            if var.kind == "backdrop_image_id" and var.value.isdigit():
+                chosen = repo.get_library_image(conn, int(var.value))
+                if chosen is not None:
+                    origin = chosen.origin
+                    attribution = chosen.article_title or chosen.source_url
+                break
         results = []
         try:
             results = render_all(VisualRequest(
@@ -963,6 +984,8 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 city=event.city or "",
                 dates=_event_dates(conn, event_id),
                 city_image=upload if os.path.exists(upload) else None,
+                city_image_origin=origin,
+                city_image_attribution=attribution,
                 out_dir=_visuals_dir(event_id),
             ))
         except ValueError as exc:
@@ -973,6 +996,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             "event_id": event_id,
             "results": results,
             "has_upload": os.path.exists(upload),
+            "library": repo.library_images(conn, event_id),
             "open_questions": playbook.open_questions,
             "problem": problem,
         })
@@ -991,6 +1015,78 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return _visuals_page(request, conn, event_id, load_event(conn, event_id))
         finally:
             conn.close()
+
+    @app.post("/events/{event_id}/visuals/library/import", response_class=HTMLResponse)
+    def visuals_import_blog(request: Request, event_id: int,
+                            blog_url: str = Form("")):
+        """Import lead images from the company blog into this event's library."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            problem, imported = "", 0
+            try:
+                assets = parse_feed(fetch_feed(blog_url))
+            except (UnsafeUrlError, ValueError) as exc:
+                assets, problem = [], str(exc)
+            except Exception:
+                assets = []
+                problem = ("That blog could not be reached. Check the URL, or "
+                           "upload images directly below.")
+            for index, asset in enumerate(assets, 1):
+                destination = os.path.join(_visuals_dir(event_id), "library",
+                                           f"blog-{index}.png")
+                try:
+                    width, height = fetch_image(asset.source_url, destination)
+                except Exception:
+                    # One unusable image (too small, moved, hotlink-blocked)
+                    # must not abandon the rest of the import.
+                    continue
+                repo.add_library_image(conn, LibraryImage(
+                    event_id=event_id, path=destination,
+                    source_url=asset.source_url,
+                    article_title=asset.article_title,
+                    article_url=asset.article_url,
+                    origin="blog", width=width, height=height))
+                imported += 1
+            conn.commit()
+            if not problem and imported == 0:
+                problem = "No usable images were found on that blog."
+            return _visuals_page(request, conn, event_id, event, problem=problem)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/visuals/library/{image_id}/use")
+    def visuals_use_library_image(event_id: int, image_id: int):
+        """Make a library image the base layer for this event's composites."""
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            image = repo.get_library_image(conn, image_id)
+            if image is None or image.event_id != event_id:
+                raise HTTPException(status_code=404, detail="No such image.")
+            target = os.path.join(_visuals_dir(event_id), "city.png")
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            import shutil
+
+            shutil.copyfile(image.path, target)
+            # Remember WHICH image, not just that a file exists — the sidecar
+            # has to name the article, and the copied file cannot say.
+            repo.set_variable(conn, event_id, "backdrop_image_id", str(image_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/visuals", status_code=303)
+
+    @app.post("/events/{event_id}/visuals/library/{image_id}/delete")
+    def visuals_delete_library_image(event_id: int, image_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.delete_library_image(conn, image_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/visuals", status_code=303)
 
     @app.post("/events/{event_id}/visuals/upload", response_class=HTMLResponse)
     async def visuals_upload(request: Request, event_id: int,
@@ -1016,6 +1112,21 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return _visuals_page(request, conn, event_id, event, problem=problem)
         finally:
             conn.close()
+
+    @app.get("/events/{event_id}/visuals/library/{image_id}.png")
+    def visuals_library_png(event_id: int, image_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            image = repo.get_library_image(conn, image_id)
+        finally:
+            conn.close()
+        if image is None or image.event_id != event_id:
+            raise HTTPException(status_code=404, detail="No such image.")
+        if not os.path.exists(image.path):
+            raise HTTPException(status_code=404, detail="Image file is missing.")
+        with open(image.path, "rb") as handle:
+            return Response(content=handle.read(), media_type="image/png")
 
     @app.get("/events/{event_id}/visuals/{variant}-{aspect}.png")
     def visual_png(event_id: int, variant: str, aspect: str):

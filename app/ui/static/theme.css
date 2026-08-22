@@ -403,3 +403,14 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
   .owner-chip { color: #162029; border-color: #162029; }
   .owner-clash, .clash-note { color: #8A5A00; font-weight: 700; }
 }
+
+/* P5-1 image library strip. */
+.library-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-md, 0.75rem);
+  list-style: none;
+  padding: 0;
+}
+.library-tile { padding: var(--space-md, 0.75rem); }
+.library-thumb { display: block; width: 100%; height: auto; border-radius: 4px; }

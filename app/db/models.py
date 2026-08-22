@@ -68,6 +68,29 @@ class EventVariable:
 
 
 @dataclass
+class LibraryImage:
+    """One image available to the visuals composer (P5-1).
+
+    Uploads and blog imagery share this table: by the time an image is a base
+    layer the composer does not care where it came from, but the SIDEBAR does —
+    provenance has to survive into any exported asset, so origin, article title
+    and source URL are stored rather than inferred later.
+    """
+
+    id: Optional[int] = None
+    event_id: int = 0
+    path: str = ""
+    source_url: str = ""
+    article_title: Optional[str] = None
+    article_url: Optional[str] = None
+    #: "uploaded" | "blog"
+    origin: str = "uploaded"
+    width: int = 0
+    height: int = 0
+    created_at: Optional[str] = None
+
+
+@dataclass
 class Staff:
     """A person who owns part of the run of show (P4-4).
 

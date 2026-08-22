@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
 
 from app.db.models import (
-    Attendee, Decision, DecisionOption, Event, EventVariable, Segment,
+    Attendee, Decision, DecisionOption, Event, EventVariable, LibraryImage,
+    Segment,
     SpendEntry, Staff,
     VenueUse, VipAlert,
 )
@@ -160,6 +161,19 @@ def add_variable(conn: sqlite3.Connection, var: EventVariable) -> int:
         (var.event_id, var.kind, var.value, var.notes),
     )
     return int(cur.lastrowid)
+
+
+def set_variable(conn: sqlite3.Connection, event_id: int, kind: str,
+                 value: str, notes: str = "") -> int:
+    """Replace a single-valued event variable (P5-1 backdrop choice).
+
+    add_variable appends, which is right for an audit-style log but wrong for a
+    current-setting: the backdrop must have one answer, not a growing pile.
+    """
+    conn.execute("DELETE FROM event_variables WHERE event_id=? AND kind=?",
+                 (event_id, kind))
+    return add_variable(conn, EventVariable(event_id=event_id, kind=kind,
+                                            value=value, notes=notes))
 
 
 def list_variables(conn: sqlite3.Connection, event_id: int) -> List[EventVariable]:
@@ -684,3 +698,51 @@ def update_segment(conn: sqlite3.Connection, segment: Segment) -> None:
 
 def delete_segment(conn: sqlite3.Connection, segment_id: int) -> None:
     conn.execute("DELETE FROM segments WHERE id=?", (segment_id,))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P5-1 — visuals image library (uploads + company blog)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def add_library_image(conn: sqlite3.Connection, image: LibraryImage) -> int:
+    """Store an asset. Re-importing a feed must not multiply the library, so a
+    repeated source_url updates in place rather than inserting."""
+    cur = conn.execute(
+        "INSERT INTO library_images (event_id, path, source_url, article_title, "
+        "article_url, origin, width, height) VALUES (?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(event_id, source_url) DO UPDATE SET path=excluded.path, "
+        "article_title=excluded.article_title, width=excluded.width, "
+        "height=excluded.height",
+        (image.event_id, image.path, image.source_url, image.article_title,
+         image.article_url, image.origin, image.width, image.height),
+    )
+    if cur.lastrowid:
+        return int(cur.lastrowid)
+    row = conn.execute(
+        "SELECT id FROM library_images WHERE event_id=? AND source_url=?",
+        (image.event_id, image.source_url)).fetchone()
+    return int(row["id"])
+
+
+def _row_to_library_image(row) -> LibraryImage:
+    return LibraryImage(
+        id=row["id"], event_id=row["event_id"], path=row["path"],
+        source_url=row["source_url"], article_title=row["article_title"],
+        article_url=row["article_url"], origin=row["origin"],
+        width=row["width"], height=row["height"], created_at=row["created_at"])
+
+
+def library_images(conn: sqlite3.Connection, event_id: int) -> List[LibraryImage]:
+    return [_row_to_library_image(r) for r in conn.execute(
+        "SELECT * FROM library_images WHERE event_id=? ORDER BY id", (event_id,))]
+
+
+def get_library_image(conn: sqlite3.Connection, image_id: int):
+    row = conn.execute("SELECT * FROM library_images WHERE id=?",
+                       (image_id,)).fetchone()
+    return _row_to_library_image(row) if row else None
+
+
+def delete_library_image(conn: sqlite3.Connection, image_id: int) -> None:
+    conn.execute("DELETE FROM library_images WHERE id=?", (image_id,))
