@@ -271,6 +271,46 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
+    # ── city revision (recovery path when a city has no venue data) ──────────
+
+    @app.get("/events/{event_id}/city", response_class=HTMLResponse)
+    def city_form(request: Request, event_id: int):
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            return templates.TemplateResponse(request, "city.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "venue"),
+                "event_id": event_id,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/city")
+    def city_update(event_id: int, city: str = Form(...)):
+        """Change the event's city and re-stage the venue step against it.
+
+        Withdraws the blocked venue decision rather than deleting it: the log
+        should still show that we looked and found nothing for the old city.
+        """
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            conn.execute("UPDATE events SET city=? WHERE id=?", (city.strip(), event_id))
+            wf = CoordinatorWorkflow(conn)
+            live_venue = next(
+                (d for d in repo.current_decisions(conn, event_id) if d.step == "venue"),
+                None,
+            )
+            if live_venue is not None:
+                conn.execute("UPDATE decisions SET superseded_by=id WHERE id=?",
+                             (live_venue.id,))
+            wf._stage_venue(event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
+
     # ── slides (T10/T11 in the shell) ────────────────────────────────────────
 
     def _deck(conn, event_id: int):

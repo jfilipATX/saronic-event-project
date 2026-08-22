@@ -30,6 +30,7 @@ def _connect(db_path: str) -> Iterator[sqlite3.Connection]:
 def init_db(db_path: str = "events.db") -> None:
     with _connect(db_path) as conn:
         conn.executescript(_sql.SCHEMA)
+        apply_migrations(conn)
 
 
 def create_event(conn: sqlite3.Connection, event: Event) -> int:
@@ -123,8 +124,29 @@ def list_variables(conn: sqlite3.Connection, event_id: int) -> List[EventVariabl
 
 _DECISION_COLUMNS = (
     "id, event_id, step, question, options_json, chosen_key, decided_by, "
-    "decided_at, note, superseded_by"
+    "decided_at, note, superseded_by, blocked_reason"
 )
+
+#: Columns added after the first release, as (table, column, DDL type). The schema
+#: is CREATE TABLE IF NOT EXISTS, which does NOT add columns to a database that
+#: already exists — so an existing events.db would silently lack these and every
+#: query naming them would fail. Applied idempotently on every init_db().
+_ADDED_COLUMNS = (
+    ("decisions", "blocked_reason", "TEXT"),
+)
+
+
+def apply_migrations(conn: sqlite3.Connection) -> list[str]:
+    """Add columns missing from an older database. Returns what was applied."""
+    applied: list[str] = []
+    for table, column, ddl in _ADDED_COLUMNS:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if not cols:            # table absent entirely; schema will create it
+            continue
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            applied.append(f"{table}.{column}")
+    return applied
 
 
 def _now() -> str:
@@ -164,12 +186,17 @@ def _row_to_decision(row: sqlite3.Row) -> Decision:
         decided_at=row["decided_at"],
         note=row["note"],
         superseded_by=row["superseded_by"],
+        blocked_reason=row["blocked_reason"],
     )
 
 
 def _validate(decision: Decision) -> None:
-    if not decision.options:
-        raise ValueError("A decision must offer at least one option to the coordinator.")
+    if not decision.options and not decision.is_blocked:
+        raise ValueError(
+            "A decision must offer at least one option to the coordinator. "
+            "If the tool genuinely has nothing to offer, set blocked_reason to "
+            "explain why — an empty slate is information, not a failure."
+        )
     if decision.chosen_key is not None:
         keys = {o.key for o in decision.options}
         if decision.chosen_key not in keys:
@@ -187,7 +214,7 @@ def record_decision(conn: sqlite3.Connection, decision: Decision) -> int:
         decided_at = _now()
     cur = conn.execute(
         "INSERT INTO decisions (event_id, step, question, options_json, chosen_key, "
-        "decided_by, decided_at, note) VALUES (?,?,?,?,?,?,?,?)",
+        "decided_by, decided_at, note, blocked_reason) VALUES (?,?,?,?,?,?,?,?,?)",
         (
             decision.event_id,
             decision.step,
@@ -197,6 +224,7 @@ def record_decision(conn: sqlite3.Connection, decision: Decision) -> int:
             decision.decided_by,
             decided_at,
             decision.note,
+            decision.blocked_reason,
         ),
     )
     return int(cur.lastrowid)

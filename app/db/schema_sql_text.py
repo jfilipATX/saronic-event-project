@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     decided_at    TEXT,
     note          TEXT,
     superseded_by INTEGER REFERENCES decisions(id),
+    blocked_reason TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
