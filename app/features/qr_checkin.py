@@ -30,6 +30,9 @@ STATE_VALID = "valid"
 STATE_ALREADY = "already"
 STATE_TAMPERED = "tampered"
 STATE_UNKNOWN = "unknown"
+#: A real invitation that has since been cancelled. Deliberately distinct from
+#: TAMPERED so the desk treats it as admin, not as a forgery.
+STATE_WITHDRAWN = "withdrawn"
 
 
 def _hmac(secret: str, payload: str) -> str:
@@ -80,6 +83,12 @@ def check_in(conn: sqlite3.Connection, secret: str, code: str,
     attendee = repo.get_attendee_by_code(conn, code)
     if attendee is None:
         return STATE_TAMPERED, None
+    # A cancelled invitation must not open the door. Reported as WITHDRAWN, not
+    # TAMPERED: a cancelled guest at the desk is an admin problem the staff
+    # member can resolve, and calling it tampering turns it into a security
+    # incident and an awkward conversation.
+    if attendee.is_withdrawn:
+        return STATE_WITHDRAWN, attendee
     if attendee.attended_at is not None:
         return STATE_ALREADY, attendee
     repo.mark_attended(conn, attendee.id, when)

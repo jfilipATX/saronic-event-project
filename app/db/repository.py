@@ -90,13 +90,64 @@ def mark_attended(conn: sqlite3.Connection, attendee_id: int, when: str) -> None
     )
 
 
-def list_attendees(conn: sqlite3.Connection, event_id: int) -> List[Attendee]:
-    return [
-        _row_to_attendee(r)
-        for r in conn.execute(
-            "SELECT * FROM attendees WHERE event_id=?", (event_id,)
-        ).fetchall()
-    ]
+def list_attendees(conn: sqlite3.Connection, event_id: int,
+                   include_withdrawn: bool = False) -> List[Attendee]:
+    """The active roster by default.
+
+    Withdrawn and erased people are excluded unless asked for: a coordinator
+    counting badges wants who is actually coming, and silently including
+    cancellations inflates every number downstream.
+    """
+    sql_text = "SELECT * FROM attendees WHERE event_id=?"
+    if not include_withdrawn:
+        sql_text += " AND withdrawn_at IS NULL AND erased_at IS NULL"
+    return [_row_to_attendee(r)
+            for r in conn.execute(sql_text, (event_id,)).fetchall()]
+
+
+def get_attendee(conn: sqlite3.Connection, attendee_id: int) -> Optional[Attendee]:
+    row = conn.execute("SELECT * FROM attendees WHERE id=?", (attendee_id,)).fetchone()
+    return _row_to_attendee(row) if row else None
+
+
+def withdraw_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    """Cancel an invitee. Reversible, and the name is deliberately kept."""
+    conn.execute(
+        "UPDATE attendees SET withdrawn_at=datetime('now') "
+        "WHERE id=? AND withdrawn_at IS NULL AND erased_at IS NULL",
+        (attendee_id,),
+    )
+
+
+def reinstate_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    person = get_attendee(conn, attendee_id)
+    if person is not None and person.is_erased:
+        raise ValueError(
+            f"Attendee {attendee_id} was erased; erasure is irreversible by "
+            "design and the personal details no longer exist."
+        )
+    conn.execute("UPDATE attendees SET withdrawn_at=NULL WHERE id=?", (attendee_id,))
+
+
+#: What an erased row shows instead of a name. Explicit rather than blank so an
+#: erasure is self-evident: a blank name could be a data bug, and a coordinator
+#: seeing an empty row would reasonably try to "fix" it.
+ERASED_PLACEHOLDER = "(erased at the attendee's request)"
+
+
+def erase_attendee(conn: sqlite3.Connection, attendee_id: int) -> None:
+    """Destroy an attendee's personal data in place. Irreversible.
+
+    Attendance is kept as an anonymous tally — deleting the row would corrupt
+    the count of who was actually in the building, which is a safety record at a
+    defense event, not a marketing metric. The check-in code goes too: a
+    credential tied to a person is personal data.
+    """
+    conn.execute(
+        "UPDATE attendees SET full_name=?, email=NULL, checkin_code=NULL, "
+        "erased_at=COALESCE(erased_at, datetime('now')) WHERE id=?",
+        (ERASED_PLACEHOLDER, attendee_id),
+    )
 
 
 def add_variable(conn: sqlite3.Connection, var: EventVariable) -> int:
@@ -136,6 +187,8 @@ _DECISION_COLUMNS = (
 _ADDED_COLUMNS = (
     ("decisions", "blocked_reason", "TEXT"),
     ("decisions", "chosen_value", "TEXT"),
+    ("attendees", "withdrawn_at", "TEXT"),
+    ("attendees", "erased_at", "TEXT"),
 )
 
 

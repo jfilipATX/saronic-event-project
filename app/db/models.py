@@ -30,6 +30,23 @@ class Attendee:
     attended_at: Optional[str] = None
     self_reported: bool = False
     created_at: Optional[str] = None
+    #: Cancelled invitee. Reversible; the name is deliberately kept.
+    withdrawn_at: Optional[str] = None
+    #: PII erasure. Irreversible; name/email/code are destroyed in place while
+    #: attendance survives as an anonymous tally.
+    erased_at: Optional[str] = None
+
+    @property
+    def is_withdrawn(self) -> bool:
+        return self.withdrawn_at is not None
+
+    @property
+    def is_erased(self) -> bool:
+        return self.erased_at is not None
+
+    @property
+    def on_roster(self) -> bool:
+        return not self.is_withdrawn and not self.is_erased
 
 
 @dataclass
