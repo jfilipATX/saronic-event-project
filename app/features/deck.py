@@ -109,6 +109,11 @@ def build_deck(playbook: Playbook, resolver: ImageResolver,
         lines = []
         for q in playbook.open_questions:
             lines.append(f"{q.title} — {q.question}")
+            if q.blocked_reason:
+                # Without this the slide shows an empty section with no
+                # explanation — in front of a room, that reads as an oversight
+                # rather than a known data gap.
+                lines.append(f"  Blocked: {q.blocked_reason}")
             for o in q.options:
                 lines.append(f"  · {o.label}: {o.reasoning}")
         slides.append(Slide(

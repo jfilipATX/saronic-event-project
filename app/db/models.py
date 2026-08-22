@@ -82,6 +82,14 @@ class Decision:
     note: Optional[str] = None
     #: id of the decision that replaced this one; None means this is the live one.
     superseded_by: Optional[int] = None
+    #: Set when the tool genuinely has no options to offer (e.g. no venue data for
+    #: the city). "We have nothing for you, and here is why" is information the
+    #: coordinator needs — it is a legitimate state, not a failure.
+    blocked_reason: Optional[str] = None
+
+    @property
+    def is_blocked(self) -> bool:
+        return bool(self.blocked_reason)
 
     @property
     def is_pending(self) -> bool:

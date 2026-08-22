@@ -86,12 +86,25 @@ class CoordinatorWorkflow:
     def _stage_venue(self, event_id: int) -> None:
         event = repo.get_event(self.conn, event_id)
         audience = event.audience_estimate or 0
-        venues = self._venues.search(event.city or "", audience)
+        city = event.city or ""
+        venues = self._venues.search(city, audience)
+        options = build_venue_options(venues, audience)
+        blocked = None
+        if not options:
+            # The provider has nothing for this city. That is real information the
+            # coordinator needs, not an error: stage the step as answered-by-nobody
+            # so the chain continues and the gap is visible where it belongs.
+            blocked = (
+                f"No venue data for {city or 'this city'}. "
+                "The venue directory does not cover it yet — revise the city to one "
+                "that is covered, or add venue data for it."
+            )
         repo.record_decision(self.conn, Decision(
             event_id=event_id,
             step="venue",
             question="Which venue should host the event?",
-            options=build_venue_options(venues, audience),
+            options=options,
+            blocked_reason=blocked,
         ))
 
     _STAGERS = {"audience": "_stage_audience", "venue": "_stage_venue"}

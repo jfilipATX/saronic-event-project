@@ -7,7 +7,14 @@
   <p class="eyebrow">Step {{ step_index }} of {{ step_total }}</p>
   <h1>{{ decision.question }}</h1>
 
-  {% if decision.is_pending %}
+  {% if decision.is_blocked %}
+    <div class="pending-note">
+      <p><strong>No options available.</strong> {{ decision.blocked_reason }}</p>
+      <p class="muted">Nothing has been decided for this step, and the playbook
+      will keep showing it as an open question until it can be answered.</p>
+      <a class="btn-quiet" href="/events/{{ event.id }}/city">Revise the city</a>
+    </div>
+  {% elif decision.is_pending %}
     <p class="muted">Review the options below — each carries its reasoning.
     Nothing is chosen until you choose it.</p>
   {% else %}

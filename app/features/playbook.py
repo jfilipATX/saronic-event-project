@@ -73,6 +73,7 @@ class OpenQuestion:
     title: str
     question: str
     options: List[DecisionOption] = field(default_factory=list)
+    blocked_reason: str = ""
 
 
 @dataclass
@@ -116,6 +117,7 @@ def compose_playbook(conn, event_id: int) -> Playbook:
                     title=_title_for(d.step),
                     question=d.question,
                     options=d.options,
+                    blocked_reason=getattr(d, "blocked_reason", "") or "",
                 )
             )
             continue
@@ -125,7 +127,8 @@ def compose_playbook(conn, event_id: int) -> Playbook:
         if chosen is None:
             open_questions.append(
                 OpenQuestion(step=d.step, title=_title_for(d.step),
-                             question=d.question, options=d.options)
+                             question=d.question, options=d.options,
+                             blocked_reason=getattr(d, "blocked_reason", "") or "")
             )
             continue
         sections.append(
@@ -214,6 +217,8 @@ def render_markdown(playbook: Playbook) -> str:
                 ""]
         for q in playbook.open_questions:
             out += [f"### {q.title}", "", f"{q.question}", ""]
+            if q.blocked_reason:
+                out += [f"> Blocked: {q.blocked_reason}", ""]
             for o in q.options:
                 reason = f" — {o.reasoning}" if o.reasoning else ""
                 out += [f"- **{o.label}**{reason}"]

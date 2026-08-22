@@ -1,0 +1,22 @@
+<!-- city.html — recovery path when the venue directory has no data for a city.
+     Context: event, steps, event_id. -->
+{% extends "base.html" %}
+{% block title %}Revise city — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Recovery</p>
+  <h1>Revise the city</h1>
+  <p class="muted">
+    The venue directory has no data for <strong>{{ event.city }}</strong>.
+    Changing the city re-runs the venue search against the new location.
+    Your earlier decisions are kept, and the log still records that we looked
+    here and found nothing.
+  </p>
+
+  <form method="post" action="/events/{{ event_id }}/city" class="form-row">
+    <input class="input" type="text" name="city" value="{{ event.city }}"
+           placeholder="City" required>
+    <button class="btn-primary" type="submit">Update city</button>
+  </form>
+
+  <p class="muted">Covered in the current mock directory: Austin, San Diego.</p>
+{% endblock %}
