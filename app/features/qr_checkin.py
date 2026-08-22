@@ -174,9 +174,13 @@ def register_walk_in(conn: sqlite3.Connection, event_id: int, full_name: str,
     """
     fields = {"full name": full_name, "email": email, "title": title,
               "company": company}
-    for label, value in fields.items():
-        if not value or not value.strip():
-            raise ValueError(f"A walk-in needs a {label}.")
+    missing = [label for label, value in fields.items()
+               if not value or not value.strip()]
+    if missing:
+        # Name everything missing at once ("an email" not "a email", and no
+        # resubmit-to-discover-the-next-gap loop for the desk operator).
+        listed = ", ".join(missing[:-1]) + (" and " if len(missing) > 1 else "") + missing[-1]
+        raise ValueError(f"A walk-in needs {listed}. All four fields are required.")
     email = email.strip()
     if not _EMAIL_RE.match(email):
         raise ValueError(f"{email!r} is not a valid email address.")
