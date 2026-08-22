@@ -186,6 +186,41 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .mt-xl { margin-top: var(--space-xl); }
 .nav-sub { font-size: 0.875rem; margin: 0; }
 
+/* ── stacked form (run-of-show segment form etc.) ─────────── */
+.form-stack {
+  display: flex; flex-direction: column; gap: var(--space-md);
+  max-width: 720px;
+  background: var(--color-surface);
+  border-radius: var(--rounded-lg);
+  padding: var(--space-lg);
+}
+.form-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.form-field > label {
+  color: var(--color-steel);
+  font-size: 0.875rem; font-weight: 600;
+}
+.form-field .input { width: 100%; box-sizing: border-box; }
+.form-pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);
+}
+@media (max-width: 640px) { .form-pair { grid-template-columns: 1fr; } }
+.form-actions { margin-top: var(--space-sm); }
+
+/* owner selection as checkable chips — replaces <select multiple> */
+.chip-group { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.chip-check input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-check span {
+  display: inline-block; cursor: pointer;
+  padding: 8px 12px; border-radius: var(--rounded-md);
+  border: 1px solid var(--color-secondary); color: var(--color-steel);
+  font-size: 0.875rem;
+}
+.chip-check input:checked + span {
+  border-color: var(--color-tertiary); color: var(--color-neutral);
+  background: var(--color-primary);
+}
+.chip-check input:focus-visible + span { outline: 2px solid var(--color-tertiary); }
+
 /* ── labelled field grid (venue amenities etc.) ───────────── */
 .field-grid {
   display: grid;

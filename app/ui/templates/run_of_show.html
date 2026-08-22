@@ -133,50 +133,78 @@
 
   <div class="no-print">
     <h2>Add a segment</h2>
-    <form method="post" action="/events/{{ event_id }}/run-of-show/segments">
-      <div class="field-grid">
+    <form method="post" action="/events/{{ event_id }}/run-of-show/segments"
+          class="form-stack">
+      <div class="form-field">
         <label for="ros-title">Title</label>
         <input class="input" id="ros-title" type="text" name="title"
+               placeholder="Setup and booth build"
                value="{{ form.title or '' }}" required>
+      </div>
 
-        <label for="ros-start">Starts</label>
-        <input class="input" id="ros-start" type="datetime-local" name="start"
-               value="{{ form.start or window.start or '' }}" required>
+      <div class="form-pair">
+        <div class="form-field">
+          <label for="ros-start">Starts</label>
+          <input class="input" id="ros-start" type="datetime-local" name="start"
+                 value="{{ form.start or window.start or '' }}" required>
+        </div>
+        <div class="form-field">
+          <label for="ros-end">Ends</label>
+          <input class="input" id="ros-end" type="datetime-local" name="end"
+                 value="{{ form.end or '' }}" required>
+        </div>
+      </div>
 
-        <label for="ros-end">Ends</label>
-        <input class="input" id="ros-end" type="datetime-local" name="end"
-               value="{{ form.end or '' }}" required>
+      <div class="form-pair">
+        <div class="form-field">
+          <label for="ros-track">Track</label>
+          <select class="input" id="ros-track" name="track">
+            {% for track in tracks %}
+              <option value="{{ track }}" {% if form.track == track %}selected{% endif %}>{{ track }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="ros-kind">Kind</label>
+          <select class="input" id="ros-kind" name="kind">
+            {% for key, label in kinds %}
+              <option value="{{ key }}" {% if form.kind == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
 
-        <label for="ros-track">Track</label>
-        <select class="input" id="ros-track" name="track">
-          {% for track in tracks %}
-            <option value="{{ track }}" {% if form.track == track %}selected{% endif %}>{{ track }}</option>
-          {% endfor %}
-        </select>
-
-        <label for="ros-kind">Kind</label>
-        <select class="input" id="ros-kind" name="kind">
-          {% for key, label in kinds %}
-            <option value="{{ key }}" {% if form.kind == key %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-
+      <div class="form-field">
         <label for="ros-location">Location</label>
         <input class="input" id="ros-location" type="text" name="location"
                placeholder="Loading dock B" value="{{ form.location or '' }}">
+      </div>
 
-        <label for="ros-owners">Owners</label>
-        <select class="input" id="ros-owners" name="owners" multiple size="4">
-          {% for person in staff %}
-            <option value="{{ person.id }}">{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</option>
-          {% endfor %}
-        </select>
+      <div class="form-field">
+        <label>Owners</label>
+        {% if staff %}
+          <div class="chip-group">
+            {% for person in staff %}
+              <label class="chip-check">
+                <input type="checkbox" name="owners" value="{{ person.id }}">
+                <span>{{ person.display_name }}{% if person.role %} · {{ person.role }}{% endif %}</span>
+              </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">No staff yet — add people below and they appear here.</p>
+        {% endif %}
+      </div>
 
+      <div class="form-field">
         <label for="ros-notes">Notes</label>
         <input class="input" id="ros-notes" type="text" name="notes"
                value="{{ form.notes or '' }}">
       </div>
-      <button class="btn-primary" type="submit">Add segment</button>
+
+      <div class="form-actions">
+        <button class="btn-primary" type="submit">Add segment</button>
+      </div>
     </form>
 
     <h2>Staff</h2>
