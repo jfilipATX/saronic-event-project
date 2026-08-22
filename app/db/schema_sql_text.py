@@ -74,6 +74,33 @@ CREATE TABLE IF NOT EXISTS venue_uses (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS staff (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    name       TEXT,
+    role       TEXT,
+    erased_at  TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_event ON staff(event_id);
+
+CREATE TABLE IF NOT EXISTS segments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL,
+    title      TEXT NOT NULL,
+    start      TEXT NOT NULL,
+    end        TEXT NOT NULL,
+    track      TEXT NOT NULL DEFAULT 'Logistics',
+    kind       TEXT NOT NULL DEFAULT 'logistics',
+    location   TEXT,
+    notes      TEXT,
+    owners_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_segments_event ON segments(event_id, start);
+
 CREATE TABLE IF NOT EXISTS custom_venues (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id   INTEGER NOT NULL,

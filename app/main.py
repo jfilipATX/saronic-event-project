@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import repository as repo, schema_sql_text as sql
-from app.db.models import Attendee, EventVariable
+from app.db.models import Attendee, EventVariable, Segment, Staff
 from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
 from app.features.images import ImageResolver
@@ -39,6 +39,17 @@ from app.features.venue_scrape import (
     build_venue_options as build_scraped_options,
     extract_venue,
     venue_from_facts,
+)
+from app.features.run_of_show import (
+    DEFAULT_TRACKS,
+    KIND_LABELS,
+    SEGMENT_KINDS,
+    board_lanes,
+    conflicts_for,
+    group_by_day,
+    now_line_pct,
+    seed_standard_day,
+    validate_segment,
 )
 from app.features.schedule import (
     describe_window,
@@ -79,7 +90,8 @@ _CHAIN_KEYS = set(CHAIN)
 
 _NAV = (
     [(key, STEP_TITLES.get(key, key)) for key in CHAIN]
-    + [("schedule", "Schedule"), ("slides", "Slides"), ("visuals", "Visuals"),
+    + [("schedule", "Schedule"), ("run-of-show", "Run of show"),
+       ("slides", "Slides"), ("visuals", "Visuals"),
        ("invites", "Invitations"),
        ("checkin", "Check-in"), ("playbook", "Playbook")]
 )
@@ -735,6 +747,140 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
         return RedirectResponse(f"/events/{event_id}/steps/venue", status_code=303)
+
+    # ── run of show (P4-4) ───────────────────────────────────────────────────
+
+    def _run_of_show_page(request: Request, conn, event_id: int, event,
+                          problem: str = "", form=None, view: str = "list"):
+        segments = repo.list_segments(conn, event_id)
+        staff = repo.list_staff(conn, event_id, include_erased=True)
+        window = window_for_event(conn, event_id)
+        flags = conflicts_for(segments)
+        return templates.TemplateResponse(request, "run_of_show.html", {
+            "event": event,
+            "steps": nav_steps(conn, event_id, "run-of-show"),
+            "event_id": event_id,
+            "segments": segments,
+            "days": group_by_day(segments),
+            "lanes": board_lanes(segments, window),
+            "now_pct": now_line_pct(window),
+            "flags": flags,
+            "staff": [p for p in staff if not p.is_erased],
+            "staff_by_id": {p.id: p for p in staff},
+            "tracks": sorted({s.track for s in segments} | set(DEFAULT_TRACKS)),
+            "kinds": [(k, KIND_LABELS[k]) for k in SEGMENT_KINDS],
+            "window": window,
+            "schedule_text": describe_window(window),
+            "view": view,
+            "problem": problem,
+            "form": form or {},
+        })
+
+    @app.get("/events/{event_id}/run-of-show", response_class=HTMLResponse)
+    def run_of_show_view(request: Request, event_id: int, view: str = "list"):
+        conn = connect()
+        try:
+            return _run_of_show_page(request, conn, event_id,
+                                     load_event(conn, event_id), view=view)
+        finally:
+            conn.close()
+
+    @app.post("/events/{event_id}/run-of-show/staff")
+    def run_of_show_add_staff(event_id: int, name: str = Form(""),
+                              role: str = Form("")):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                repo.add_staff(conn, Staff(event_id=event_id, name=name,
+                                           role=role))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/staff/{staff_id}/erase")
+    def run_of_show_erase_staff(event_id: int, staff_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                repo.erase_staff(conn, staff_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/seed")
+    def run_of_show_seed(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            try:
+                seed_standard_day(conn, event_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/segments", response_class=HTMLResponse)
+    async def run_of_show_add_segment(request: Request, event_id: int):
+        form = await request.form()
+        typed = {k: v for k, v in form.items()}
+        owners = [int(v) for v in form.getlist("owners") if str(v).isdigit()]
+        segment = Segment(
+            event_id=event_id,
+            title=str(form.get("title") or ""),
+            start=str(form.get("start") or ""),
+            end=str(form.get("end") or ""),
+            track=str(form.get("track") or "Logistics"),
+            kind=str(form.get("kind") or "logistics"),
+            location=str(form.get("location") or "") or None,
+            notes=str(form.get("notes") or "") or None,
+            owner_ids=owners,
+        )
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            try:
+                validate_segment(segment)
+            except ValueError as exc:
+                # Sticky: re-render with what was typed rather than an empty
+                # form (walk-in precedent).
+                return _run_of_show_page(request, conn, event_id, event,
+                                         problem=str(exc), form=typed)
+            segment_id = str(form.get("segment_id") or "")
+            if segment_id.isdigit():
+                segment.id = int(segment_id)
+                repo.update_segment(conn, segment)
+            else:
+                repo.add_segment(conn, segment)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
+
+    @app.post("/events/{event_id}/run-of-show/segments/{segment_id}/delete")
+    def run_of_show_delete_segment(event_id: int, segment_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.delete_segment(conn, segment_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/run-of-show",
+                                status_code=303)
 
     # ── event schedule (P4-3) ────────────────────────────────────────────────
 

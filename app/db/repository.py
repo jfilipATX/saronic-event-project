@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Dict, Iterator, List, Optional
 
 from app.db.models import (
-    Attendee, Decision, DecisionOption, Event, EventVariable, SpendEntry,
+    Attendee, Decision, DecisionOption, Event, EventVariable, Segment,
+    SpendEntry, Staff,
     VenueUse, VipAlert,
 )
 from app.db import schema_sql_text as _sql
@@ -578,3 +579,108 @@ def replace_options(conn: sqlite3.Connection, decision_id: int,
         )
     conn.execute("UPDATE decisions SET options_json=? WHERE id=?",
                  (_dump_options(options), decision_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# P4-4 — staff and run-of-show segments
+#
+# Segments are operational data, edited freely like the roster rather than
+# staged/chosen/revised. Staff are PII-scoped like attendees: erasure
+# anonymises, because who was on shift is a safety record.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def add_staff(conn: sqlite3.Connection, person: Staff) -> int:
+    name = (person.name or "").strip()
+    if not name:
+        raise ValueError("A staff member needs a name.")
+    cur = conn.execute(
+        "INSERT INTO staff (event_id, name, role) VALUES (?,?,?)",
+        (person.event_id, name, (person.role or "").strip() or None),
+    )
+    return int(cur.lastrowid)
+
+
+def _row_to_staff(row) -> Staff:
+    return Staff(id=row["id"], event_id=row["event_id"], name=row["name"],
+                 role=row["role"], erased_at=row["erased_at"])
+
+
+def list_staff(conn: sqlite3.Connection, event_id: int,
+               include_erased: bool = False) -> List[Staff]:
+    sql_text = "SELECT * FROM staff WHERE event_id=?"
+    if not include_erased:
+        sql_text += " AND erased_at IS NULL"
+    sql_text += " ORDER BY id"
+    return [_row_to_staff(r) for r in conn.execute(sql_text, (event_id,))]
+
+
+def get_staff(conn: sqlite3.Connection, staff_id: int) -> Optional[Staff]:
+    row = conn.execute("SELECT * FROM staff WHERE id=?", (staff_id,)).fetchone()
+    return _row_to_staff(row) if row else None
+
+
+def erase_staff(conn: sqlite3.Connection, staff_id: int) -> None:
+    """Destroy the person's identity, keep the record that a shift was covered.
+
+    Irreversible by design, and refuses a second attempt so a caller cannot
+    mistake 'already erased' for 'erased just now'.
+    """
+    person = get_staff(conn, staff_id)
+    if person is None:
+        raise ValueError(f"No staff member {staff_id}.")
+    if person.is_erased:
+        raise ValueError(f"Staff member {staff_id} was already erased.")
+    conn.execute(
+        "UPDATE staff SET name=NULL, role=NULL, erased_at=? WHERE id=?",
+        (_now(), staff_id),
+    )
+
+
+def add_segment(conn: sqlite3.Connection, segment: Segment) -> int:
+    cur = conn.execute(
+        "INSERT INTO segments (event_id, title, start, end, track, kind, "
+        "location, notes, owners_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        (segment.event_id, segment.title, segment.start, segment.end,
+         segment.track, segment.kind, segment.location, segment.notes,
+         json.dumps(list(segment.owner_ids))),
+    )
+    return int(cur.lastrowid)
+
+
+def _row_to_segment(row) -> Segment:
+    try:
+        owners = json.loads(row["owners_json"] or "[]")
+    except (ValueError, TypeError):
+        owners = []
+    return Segment(
+        id=row["id"], event_id=row["event_id"], title=row["title"],
+        start=row["start"], end=row["end"], track=row["track"],
+        kind=row["kind"], location=row["location"], notes=row["notes"],
+        owner_ids=[int(o) for o in owners],
+    )
+
+
+def list_segments(conn: sqlite3.Connection, event_id: int) -> List[Segment]:
+    return [_row_to_segment(r) for r in conn.execute(
+        "SELECT * FROM segments WHERE event_id=? ORDER BY start, id", (event_id,))]
+
+
+def get_segment(conn: sqlite3.Connection, segment_id: int) -> Optional[Segment]:
+    row = conn.execute("SELECT * FROM segments WHERE id=?",
+                       (segment_id,)).fetchone()
+    return _row_to_segment(row) if row else None
+
+
+def update_segment(conn: sqlite3.Connection, segment: Segment) -> None:
+    conn.execute(
+        "UPDATE segments SET title=?, start=?, end=?, track=?, kind=?, "
+        "location=?, notes=?, owners_json=? WHERE id=?",
+        (segment.title, segment.start, segment.end, segment.track,
+         segment.kind, segment.location, segment.notes,
+         json.dumps(list(segment.owner_ids)), segment.id),
+    )
+
+
+def delete_segment(conn: sqlite3.Connection, segment_id: int) -> None:
+    conn.execute("DELETE FROM segments WHERE id=?", (segment_id,))
