@@ -28,13 +28,29 @@ from app.claude.client import get_client
 from app.db import repository as repo
 from app.features import run_of_show as ros
 from app.features.venue_scrape import venue_from_facts
+from app.features.workflow import CoordinatorWorkflow
 
-# Sections this assistant can handle in the first cut.
-SCOPES = ("venue", "run_of_show")
+# Sections this assistant can handle in this cut. The full staged chain is
+# event_type -> audience -> venue; run_of_show and event variables round it out.
+# slides/checkin are display-only sections (no staged decision) and remain
+# out of scope for the assistant.
+SCOPES = ("event_type", "audience", "venue", "variables", "run_of_show")
 
 EXTRACT_SYSTEM = """You are an intake assistant for an event planning tool. \
 The coordinator replies in natural language. Extract structured fields and \
 return ONLY a JSON object (no prose, no markdown fences).
+
+For scope "event_type", return:
+  {"scope":"event_type","action":"add","key":str}
+  where key is ONE of the valid event-type keys listed for this event.
+
+For scope "audience", return:
+  {"scope":"audience","action":"add","key":str,"value":int|null}
+  key is one of the valid audience keys (use "custom" with a numeric "value" for
+  a coordinator-supplied headcount).
+
+For scope "variables", return:
+  {"scope":"variables","action":"add","kind":str,"value":str,"notes":str|null}
 
 For scope "venue", return:
   {"scope":"venue","action":"add","name":str|null,"city":str|null,
@@ -46,17 +62,17 @@ For scope "run_of_show", return ONE segment:
    "start":str,"end":str,"track":str|null,"kind":str|null,
    "owners":[str],"location":str|null}
 
-If the message is an EDIT to an existing segment (e.g. "move doors open to 11am"),
-return:
-  {"scope":"run_of_show","action":"edit","match_title":str,
-   "field":str,"value":str}
-  where field is one of: start, end, title, track, kind, location, owners, day.
+If the message is an EDIT to an existing decision (e.g. "change event type to \
+expo", "audience 500", "move doors open to 11am"), return:
+  {"scope":<scope>,"action":"edit","field":str,"value":str}
+  where field is "key" (for event_type/audience) or one of start, end, title, \
+track, kind, location, owners, day (for run_of_show).
 
-If the message is out of scope (audience, slides, check-in, etc.), return:
+If the message is out of scope (slides, check-in, etc.), return:
   {"scope":null,"action":"out_of_scope","note":str}
 
-Never invent a capacity or amenity the coordinator did not state. If a required \
-field is missing, return it as null and the assistant will ask a follow-up."""
+Never invent a value the coordinator did not state. If a required field is \
+missing, return it as null and the assistant will ask a follow-up."""
 
 EDIT_SYSTEM = """You map a free-form edit request on a run-of-show segment to one \
 field change. Return ONLY JSON:
@@ -100,30 +116,64 @@ def _handle(text: str, event_id: int, client=None, conn=None) -> ConciergeMessag
                 text="(Model off — I can't interpret free text without Claude. "
                      "Start the server with a key, or use the forms directly.)")
     else:
+        system = EXTRACT_SYSTEM
+        scope_hint = _scope_hint(text, event_id, conn)
+        if scope_hint:
+            system = EXTRACT_SYSTEM + "\n\n" + scope_hint
         raw = client.complete(
-            system=EXTRACT_SYSTEM, prompt=text, max_tokens=400,
+            system=system, prompt=text, max_tokens=400,
             event_id=event_id, surface="concierge")
         extracted = _parse_json(raw)
         if extracted is None:
             return ConciergeMessage(
                 role="assistant",
                 text="I couldn't parse that. Could you rephrase? For example: "
-                     "'Add venue Port Alpha, San Diego, capacity 1200, with "
-                     "catering and security' or 'Doors open at 11am on day 1'.")
+                     "'It's a convention', 'Plan for 500 people', "
+                     "'Add venue Port Alpha, San Diego, capacity 1200', or "
+                     "'Doors open at 11am on day 1'.")
 
     scope = extracted.get("scope")
     if scope is None or scope not in SCOPES:
         return ConciergeMessage(
             role="assistant",
             text=extracted.get("note") or "That's outside what I can set up yet "
-                 "(venue and run-of-show only for now). You can use the forms "
-                 "for the rest.", data=extracted)
+                 "(event type, audience, venue, run-of-show and event variables "
+                 "only for now). You can use the forms for the rest.",
+            data=extracted)
 
+    if scope == "event_type":
+        return _apply_event_type(extracted, event_id, conn)
+    if scope == "audience":
+        return _apply_audience(extracted, event_id, conn)
+    if scope == "variables":
+        return _apply_variables(extracted, event_id, conn)
     if scope == "venue":
         return _apply_venue(extracted, event_id, conn)
     if scope == "run_of_show":
         return _apply_ros(extracted, event_id, conn)
     return ConciergeMessage(role="assistant", text="Hmm, I didn't catch that.")
+
+
+def _scope_hint(text: str, event_id: int, conn) -> Optional[str]:
+    """For staged decisions (event_type/audience) the model must return a key
+    that matches an OFFERED option, so we hand it the current valid keys."""
+    if conn is None:
+        return None
+    low = text.lower()
+    if "audience" in low:
+        live = next((d for d in repo.current_decisions(conn, event_id)
+                     if d.step == "audience"), None)
+    elif "event type" in low or "kind of event" in low or "format" in low:
+        live = next((d for d in repo.current_decisions(conn, event_id)
+                     if d.step == "event_type"), None)
+    else:
+        return None
+    if live is None:
+        return None
+    keys = [o.key for o in live.options]
+    label = "event type" if live.step == "event_type" else "audience"
+    return (f"Valid {label} keys for this event: {', '.join(keys)}. "
+            f"Return the best-matching key exactly as written.")
 
 
 # --- venue ---------------------------------------------------------------
@@ -169,6 +219,88 @@ def CoordinatorWorkflow_restage(conn, event_id: int) -> None:
     """Thin wrapper so we don't import the whole workflow module at module top."""
     from app.features.workflow import CoordinatorWorkflow
     CoordinatorWorkflow(conn).restage_venue(event_id)
+
+
+# --- event type + audience ----------------------------------------------
+
+def _valid_keys(conn, event_id: int, step: str) -> List[str]:
+    live = next((d for d in repo.current_decisions(conn, event_id)
+                 if d.step == step), None)
+    return [o.key for o in live.options] if live else []
+
+
+def _apply_event_type(extracted: Dict[str, Any], event_id: int,
+                      conn) -> ConciergeMessage:
+    if conn is None:
+        return ConciergeMessage(role="assistant", text="(No database connection.)")
+    # For an edit (action:"edit", field:"key") the new key arrives in "value".
+    key = (extracted.get("key") or extracted.get("value") or "").strip()
+    valid = _valid_keys(conn, event_id, "event_type")
+    if key not in valid:
+        return ConciergeMessage(
+            role="assistant",
+            text=f"'{key}' isn't one of the event types on offer "
+                 f"({', '.join(valid) or 'none staged'}). Pick one of those, "
+                 f"or describe the event and I'll match it.", data=extracted)
+    try:
+        CoordinatorWorkflow(conn).choose(event_id, "event_type", key)
+    except LookupError as exc:
+        return ConciergeMessage(role="assistant", text=str(exc), data=extracted)
+    decided = next((d for d in repo.current_decisions(conn, event_id)
+                    if d.step == "event_type" and not d.is_pending), None)
+    label = decided.chosen_option.label if decided and decided.chosen_option else key
+    return ConciergeMessage(
+        role="assistant",
+        text=f"Set event type to {label}. Audience and venue follow from that.",
+        data=extracted)
+
+
+def _apply_audience(extracted: Dict[str, Any], event_id: int,
+                    conn) -> ConciergeMessage:
+    if conn is None:
+        return ConciergeMessage(role="assistant", text="(No database connection.)")
+    # Stage the audience step if the chain hasn't reached it yet (the user may
+    # answer out of order; we don't block them on a missing prior answer).
+    if not _valid_keys(conn, event_id, "audience"):
+        CoordinatorWorkflow(conn)._stage_audience(event_id)
+    key = (extracted.get("key") or extracted.get("value") or "").strip()
+    value = extracted.get("value")
+    valid = _valid_keys(conn, event_id, "audience")
+    if key not in valid:
+        return ConciergeMessage(
+            role="assistant",
+            text=f"'{key}' isn't one of the audience options on offer "
+                 f"({', '.join(valid) or 'none staged'}). Use 'custom' with a "
+                 f"number for your own headcount.", data=extracted)
+    try:
+        CoordinatorWorkflow(conn).choose(
+            event_id, "audience", key, value=str(value) if value else None)
+    except (LookupError, ValueError) as exc:
+        return ConciergeMessage(role="assistant", text=str(exc), data=extracted)
+    ev = repo.get_event(conn, event_id)
+    size = ev.audience_estimate or "—"
+    return ConciergeMessage(
+        role="assistant",
+        text=f"Set audience plan (key {key}); planning headcount is {size}.",
+        data=extracted)
+
+
+def _apply_variables(extracted: Dict[str, Any], event_id: int,
+                     conn) -> ConciergeMessage:
+    if conn is None:
+        return ConciergeMessage(role="assistant", text="(No database connection.)")
+    kind = (extracted.get("kind") or "").strip()
+    value = (extracted.get("value") or "").strip()
+    if not kind or not value:
+        return ConciergeMessage(
+            role="assistant",
+            text="I need both a variable name (kind) and its value to record it.",
+            data=extracted)
+    repo.set_variable(conn, event_id, kind, value,
+                      notes=(extracted.get("notes") or None))
+    return ConciergeMessage(
+        role="assistant",
+        text=f"Recorded variable '{kind}': {value}.", data=extracted)
 
 
 # --- run of show ---------------------------------------------------------
@@ -365,7 +497,23 @@ def _heuristic_extract(text: str) -> Optional[Dict[str, Any]]:
     """Mock-mode fallback: only handles a couple of obvious phrasings so tests
     can exercise the flow without a model. Returns None for anything unclear."""
     t = text.lower()
-    if "add venue" in t or "venue" in t and ("capacity" in t or "san diego" in t):
+    if "event type" in t or "kind of event" in t or " format" in t:
+        for k in ("convention", "company-hosted", "panel", "other"):
+            if k in t:
+                return {"scope": "event_type", "action": "add", "key": k}
+    if "audience" in t or "people" in t:
+        m = re.search(r"(\d{2,4})\s*(people|attend|guests)?", t)
+        if m:
+            return {"scope": "audience", "action": "add", "key": "custom",
+                    "value": int(m.group(1))}
+    if "add variable" in t or "variable" in t:
+        m = re.search(r"variable\s+([^:]+?)\s*[:\-]\s*(.+)", t) or \
+            re.search(r"([A-Za-z ]+?)\s+(.+)", t)
+        if m:
+            return {"scope": "variables", "action": "add",
+                    "kind": m.group(1).strip().title(),
+                    "value": m.group(2).strip()}
+    if "add venue" in t or ("venue" in t and ("capacity" in t or "san diego" in t)):
         m = re.search(r"capacity\s*(\d+)", t)
         return {"scope": "venue", "action": "add",
                 "name": _cap_after(t, "venue"), "capacity": int(m.group(1)) if m else None,
