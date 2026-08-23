@@ -21,7 +21,10 @@ from typing import List, Optional
 
 #: Accepted inputs. ``datetime-local`` yields the first; a plain date input the
 #: second; the third is what SQLite hands back if a value was ever normalised.
-_FORMATS = ("%Y-%m-%dT%H:%M", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S")
+#: The final two accept a space separator (common in hand-entered segment times)
+#: with or without seconds.
+_FORMATS = ("%Y-%m-%dT%H:%M", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M")
 
 
 @dataclass

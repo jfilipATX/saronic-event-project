@@ -11,8 +11,10 @@ either side to match.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -22,6 +24,7 @@ from fastapi.responses import (
     PlainTextResponse,
     RedirectResponse,
     Response,
+    FileResponse,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -36,6 +39,7 @@ from app.db.models import (
 )
 from app.features.deck import build_deck, render_deck_markdown
 from app.features.event_facts import build_fact_options, extract_facts
+from app.features.exec_pptx import build_exec_pptx
 from app.features.images import ImageResolver
 from app.features.playbook import STEP_TITLES, compose_playbook, render_markdown
 from app.features.visuals import VisualRequest, render_all, strip_exif
@@ -678,6 +682,32 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         try:
             load_event(conn, event_id)
             return render_deck_markdown(_deck(conn, event_id))
+        finally:
+            conn.close()
+
+    @app.get("/events/{event_id}/slides/export.pptx",
+             response_class=FileResponse)
+    def slides_export_pptx(event_id: int):
+        """P5-6 — executive PowerPoint export. Builds from the same playbook +
+        run-of-show + ledger the web views use, so the .pptx can never disagree
+        with the on-screen playbook. No Claude call; content is already settled.
+        """
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            pb = compose_playbook(conn, event_id)
+            segments = repo.list_segments(conn, event_id)
+            blob = build_exec_pptx(conn, event_id, pb, segments, event=event)
+            slug = re.sub(r"[^a-z0-9]+", "-", (event.name or "event").lower()).strip("-") or "event"
+            path = os.path.join(tempfile.gettempdir(), f"{slug}-executive-summary.pptx")
+            with open(path, "wb") as fh:
+                fh.write(blob)
+            return FileResponse(
+                path,
+                media_type=("application/vnd.openxmlformats-officedocument."
+                            "presentationml.presentation"),
+                filename=f"{slug}-executive-summary.pptx",
+            )
         finally:
             conn.close()
 
