@@ -59,6 +59,7 @@ from app.claude.errors import BudgetExceededError, ClaudeError
 from app.claude.ledger import SpendLedger
 from app.config import CONFIG
 from app.features.example_images import seed_example_images
+from app.features.demo_seed import seed_fleet_week_demo
 from app.features.image_library import (
     classify_backdrop,
     fetch_feed,
@@ -1166,6 +1167,17 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             })
         finally:
             conn.close()
+
+    @app.post("/demo/load-fleet-week")
+    def demo_load_fleet_week():
+        """P6-6 — seed a fully-fleshed, labeled Fleet Week demo event."""
+        conn = connect()
+        try:
+            eid = seed_fleet_week_demo(conn)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{eid}/playbook", status_code=303)
 
     @app.post("/events/{event_id}/run-of-show/staff/assign")
     def run_of_show_assign_staff(event_id: int, name: str = Form(""),

@@ -29,9 +29,11 @@ def seed_fleet_week_demo(conn) -> int:
     # Window: a 3-day expo (matches the multi-day P5-2 model).
     repo.set_event_window(conn, eid, _window("2026-05-08", "2026-05-10"))
     # Multi-day hours per the scrape (festival 10–18, ship tours by queue).
-    repo.add_event_day(conn, eid, "2026-05-08", "10:00", "18:00")
-    repo.add_event_day(conn, eid, "2026-05-09", "10:00", "18:00")
-    repo.add_event_day(conn, eid, "2026-05-10", "10:00", "18:00")
+    repo.replace_event_days(conn, eid, [
+        _day("2026-05-08", "10:00", "18:00", 0),
+        _day("2026-05-09", "10:00", "18:00", 1),
+        _day("2026-05-10", "10:00", "18:00", 2),
+    ])
 
     # --- Decisions (settle the chain so the playbook/deck have content) ------
     repo.record_decision(conn, Decision(
@@ -123,3 +125,8 @@ def seed_fleet_week_demo(conn) -> int:
 def _window(start: str, end: str):
     from app.features.schedule import parse_window
     return parse_window(start, end)
+
+
+def _day(date: str, open_t: str, close_t: str, index: int):
+    from app.features.schedule import DayWindow
+    return DayWindow(date=date, open=open_t, close=close_t, day_index=index)
