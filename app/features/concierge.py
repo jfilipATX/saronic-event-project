@@ -120,9 +120,16 @@ def _handle(text: str, event_id: int, client=None, conn=None) -> ConciergeMessag
         scope_hint = _scope_hint(text, event_id, conn)
         if scope_hint:
             system = EXTRACT_SYSTEM + "\n\n" + scope_hint
-        raw = client.complete(
-            system=system, prompt=text, max_tokens=400,
-            event_id=event_id, surface="concierge")
+        try:
+            raw = client.complete(
+                system=system, prompt=text, max_tokens=400,
+                event_id=event_id, surface="concierge")
+        except Exception as exc:  # model/key/network failure must not 500
+            return ConciergeMessage(
+                role="assistant",
+                text="(The language model isn't reachable right now — "
+                     f"{type(exc).__name__}. Your answers aren't lost; restart "
+                     "with a valid key or use the forms directly.)")
         extracted = _parse_json(raw)
         if extracted is None:
             return ConciergeMessage(

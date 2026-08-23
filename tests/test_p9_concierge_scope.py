@@ -79,6 +79,17 @@ def test_variables_add_via_session(conn, event_id):
     assert any(v.kind == "Hotel block" and "Marriott" in v.value for v in vars_)
 
 
+def test_model_failure_degrades_honestly(conn, event_id):
+    class _BoomClient:
+        def complete(self, *, system, prompt, max_tokens=1024, temperature=0.3,
+                     event_id=None, surface=""):
+            raise RuntimeError("key expired")
+    s = ConciergeSession(event_id=event_id)
+    reply = s.ask("plan for 500 people", client=_BoomClient(), conn=conn)
+    assert "reachable" in reply.text or "model" in reply.text.lower()
+    assert reply.role == "assistant"
+
+
 def test_event_type_edit_revises_existing(conn, event_id):
     # First set event_type, then change it via NL edit.
     from app.features.workflow import CoordinatorWorkflow
