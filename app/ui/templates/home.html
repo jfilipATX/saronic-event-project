@@ -17,9 +17,12 @@
     <button class="btn-quiet" type="submit">Read from URL</button>
   </form>
 
-  <form method="post" action="/demo/load-fleet-week" class="form-row">
-    <button class="btn-quiet" type="submit">Load Fleet Week demo</button>
-  </form>
+  <div class="demo-callout">
+    <p>Explore the tool with a ready-made sample event.</p>
+    <form method="post" action="/demo/load-fleet-week">
+      <button class="btn-demo" type="submit">Load Fleet Week demo</button>
+    </form>
+  </div>
 
   <p class="muted">Or enter the details yourself:</p>
 
@@ -59,19 +62,19 @@
             {% if e.event_type %}<span>{{ e.event_type }}</span>{% endif %}
             {% if e.audience_estimate %}<span>{{ "{:,}".format(e.audience_estimate) }} attendees</span>{% endif %}
           </div>
-          <div class="option-actions">
+          <div class="lifecycle-actions">
             <a class="btn-primary" href="/events/{{ e.id }}/playbook">Open playbook</a>
             {% if e.status != 'complete' %}
               <form method="post" action="/events/{{ e.id }}/complete" class="inline-form">
-                <button class="btn-quiet" type="submit">Mark complete</button>
+                <button class="btn-lifecycle" type="submit">Mark complete</button>
               </form>
             {% endif %}
             <form method="post" action="/events/{{ e.id }}/archive" class="inline-form">
-              <button class="btn-quiet" type="submit">Archive</button>
+              <button class="btn-lifecycle" type="submit">Archive</button>
             </form>
             <form method="post" action="/events/{{ e.id }}/delete" class="inline-form"
                   onsubmit="return confirm('Delete this event? Attendee/staff identities will be permanently erased (counts kept).');">
-              <button class="btn-danger" type="submit">Delete</button>
+              <button class="btn-lifecycle danger" type="submit">Delete</button>
             </form>
           </div>
         </li>

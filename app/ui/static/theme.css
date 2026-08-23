@@ -115,6 +115,40 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 .muted-block { margin-top: var(--space-lg); }
 .muted-block summary { cursor: pointer; color: var(--color-steel); }
 
+/* ── discoverability fix (Phase 6 follow-up) ────
+   The demo loader + lifecycle controls were btn-quiet ghosts, near-invisible.
+   Promote them to findable surfaces. */
+.demo-callout {
+  border: 1px solid var(--color-tertiary);
+  background: color-mix(in srgb, var(--color-tertiary) 8%, var(--color-background));
+  border-radius: var(--rounded-md); padding: var(--space-md) var(--space-lg);
+  margin: var(--space-md) 0;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
+}
+.demo-callout p { margin: 0; color: var(--color-neutral); font-weight: 600; }
+.demo-callout .btn-demo {
+  background: var(--color-tertiary); color: var(--color-background); border: 0;
+  border-radius: var(--rounded-md); padding: 10px 16px; cursor: pointer;
+  font-family: var(--font-display); font-stretch: 125%; font-size: 0.8125rem;
+  font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  text-decoration: none; white-space: nowrap;
+}
+.demo-callout .btn-demo:hover { background: var(--color-neutral); }
+
+/* per-event lifecycle controls: findable, distinct from the playbook primary */
+.lifecycle-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.lifecycle-actions .btn-lifecycle {
+  background: transparent; color: var(--color-neutral);
+  border: 1px solid var(--color-steel); border-radius: var(--rounded-sm);
+  padding: 7px 12px; cursor: pointer;
+  font-family: var(--font-display); font-stretch: 120%; font-size: 0.75rem;
+  font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  text-decoration: none;
+}
+.lifecycle-actions .btn-lifecycle:hover { border-color: var(--color-neutral); background: var(--color-secondary); }
+.lifecycle-actions .btn-lifecycle.danger { color: #9b2c2c; border-color: #9b2c2c; }
+.lifecycle-actions .btn-lifecycle.danger:hover { background: #9b2c2c; color: #fff; }
+
 /* lifecycle + demo badges */
 .tag-demo, .tag-complete, .tag-erased {
   font-family: var(--font-display); font-stretch: 110%;
