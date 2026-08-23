@@ -24,6 +24,11 @@ venv/
 # are the evidence artifacts that show the tool actually ran. Only the transient
 # real-Claude evidence directory is regenerated per pass.
 /output/
+# Per-event Visuals renders (PNG/JSON composites) are machine-regenerated on
+# every Visuals page open — per-machine outputs that do NOT belong in version
+# control and cause pull conflicts. The real evidence lives in
+# generated/claude-pass/ and the exported playbook/deck files, which stay tracked.
+generated/visuals/
 
 # ── Editor / OS ──
 .vscode/
