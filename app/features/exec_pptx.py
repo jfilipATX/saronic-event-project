@@ -210,6 +210,18 @@ def _venue_facts(pb):
     return None, None, []
 
 
+def _strip_day(val: str, day: str) -> str:
+    """Strip the date prefix from a timestamp when the day header already
+    carries it (exec deck + print view both group by day)."""
+    if not val:
+        return "—"
+    if val.startswith(day + " "):
+        return val[len(day) + 1:]
+    if "T" in val and val.startswith(day + "T"):
+        return val[len(day) + 1:].replace("T", " ")
+    return val
+
+
 def _slide_run_of_show(pres: Presentation, conn, event: Event, segments) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "RUN OF SHOW")
@@ -227,7 +239,8 @@ def _slide_run_of_show(pres: Presentation, conn, event: Event, segments) -> None
             pl = tf.add_paragraph()
             _set_font(pl.add_run(), _FONT_BODY, 12, _INK)
             owners = ", ".join(_owner_label(conn, o) for o in seg.owner_ids) or "—"
-            pl.runs[0].text = (f"{seg.start}–{seg.end}  {seg.title}  "
+            pl.runs[0].text = (f"{_strip_day(seg.start, day)}–"
+                               f"{_strip_day(seg.end, day)}  {seg.title}  "
                                f"[{seg.track}]  ·  {owners}")
             flag = conflicts.get(seg.id)
             if flag:

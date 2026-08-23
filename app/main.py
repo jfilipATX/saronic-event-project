@@ -583,6 +583,102 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
+    @app.get("/events/{event_id}/playbook/print", response_class=HTMLResponse)
+    def playbook_print(request: Request, event_id: int):
+        """P5-7 — printable day-of operational reference. Standalone, chrome-free
+        document that reads the same playbook + run-of-show + ledger as the
+        screen view, so print and screen never disagree. No Claude call."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            pb = compose_playbook(conn, event_id)
+            # Decisions from the settled chain, in chain order.
+            live = {d.step: d for d in repo.current_decisions(conn, event_id)}
+            sections = [
+                PlaybookSectionVM(
+                    title=STEP_TITLES.get(key, key),
+                    decision=live.get(key),
+                    rejected=(live[key].alternatives if key in live else []),
+                    url=f"/events/{event_id}/steps/{key}",
+                )
+                for key in CHAIN
+            ]
+            # Venue facts from the settled venue decision.
+            venue_label = venue_capacity = None
+            venue_amenities = []
+            venue_opt_out = repo.get_event_opt_out(conn, event_id) \
+                if hasattr(repo, "get_event_opt_out") else None
+            for sec in pb.sections:
+                if sec.step == "venue" or "venue" in sec.title.lower():
+                    venue_label = sec.chosen_label
+            # Run of show, grouped by day, with date stripped from row times.
+            segments = repo.list_segments(conn, event_id)
+            conflicts = conflicts_for(segments)
+            pool = {p.id: p for p in repo.list_people(conn, include_erased=True)}
+
+            def owner_label_for(pid):
+                p = pool.get(pid)
+                return p.display_name if p and not p.is_erased else "—"
+
+            ros_days = []
+            for day, segs in group_by_day(segments).items():
+                day_segs = []
+                for s in segs:
+                    def _t(val, day=day):
+                        if not val:
+                            return "—"
+                        # Strip the date prefix when it matches the day header.
+                        if val.startswith(day + " "):
+                            return val[len(day) + 1:]
+                        if "T" in val and val.startswith(day + "T"):
+                            return val[len(day) + 1:].replace("T", " ")
+                        return val
+                    day_segs.append({
+                        "id": s.id,
+                        "title": s.title,
+                        "track": s.track,
+                        "location": s.location,
+                        "start_time": _t(s.start),
+                        "end_time": _t(s.end),
+                        "owners": ", ".join(owner_label_for(o)
+                                            for o in s.owner_ids) or "—",
+                    })
+                ros_days.append({"day": day, "segments": day_segs})
+            # Check-in essentials: VIPs (name/company only) + assigned staff.
+            attendees = repo.list_attendees(conn, event_id)
+            vips = [{"name": a.full_name or "(unnamed)",
+                     "company": a.company or ""}
+                    for a in attendees if a.is_vip]
+            checkin_staff = []
+            for row in repo.event_staff_rows(conn, event_id):
+                if not row["can_check_in"]:
+                    continue
+                p = pool.get(row["person_id"])
+                if p and not p.is_erased:
+                    checkin_staff.append(p.display_name)
+            spend = repo.spend_total(conn, event_id=event_id)
+            owner = (event.owner_name +
+                     (f" — {event.owner_role}" if event.owner_role else "")) \
+                if event.owner_name else None
+            return templates.TemplateResponse(request, "playbook_print.html", {
+                "event": event,
+                "schedule": describe_schedule(conn, event_id),
+                "owner": owner,
+                "sections": sections,
+                "venue_label": venue_label,
+                "venue_capacity": venue_capacity,
+                "venue_amenities": venue_amenities,
+                "venue_opt_out": venue_opt_out,
+                "ros_days": ros_days,
+                "conflicts": conflicts,
+                "owner_label_for": owner_label_for,
+                "vips": vips,
+                "checkin_staff": sorted(set(checkin_staff)),
+                "spend": spend if spend else None,
+            })
+        finally:
+            conn.close()
+
     # ── venue favourites (P2-3) ──────────────────────────────────────────────
 
     @app.post("/events/{event_id}/venues/{venue_ref}/favourite")

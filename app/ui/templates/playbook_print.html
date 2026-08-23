@@ -1,0 +1,160 @@
+<!-- playbook_print.html — P5-7 printable day-of operational reference.
+     A standalone, chrome-free document (no nav/stepper/buttons). Reads the same
+     compose_playbook + run-of-show + ledger as the screen view, so print and
+     screen never disagree. PII-scoped: attendee contact (email) is excluded;
+     VIPs show only name/company/tier. Amber double-booking flag carries
+     print-color-adjust: exact so it survives onto paper.
+     Context: event, schedule, owner, sections, venue facts (label/capacity/
+     amenities/opt_out), ros_days (list of {day, segments}), conflicts (seg_id ->
+     {person_id: why}), vips (list of {name, company, is_vip}), checkin_staff
+     (sorted names), spend (float|None), credentials_note. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Playbook — {{ event.name }}</title>
+  <style>
+    @page { size: auto; margin: 1.5cm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Inter", system-ui, sans-serif;
+      color: #162029; background: #fff; font-size: 11pt; line-height: 1.35;
+      margin: 0; padding: 0;
+    }
+    h1 { font-family: "Archivo Expanded", "Archivo", sans-serif;
+         font-size: 18pt; text-transform: uppercase; letter-spacing: 0.04em;
+         margin: 0 0 4px; }
+    h2 { font-family: "Archivo Expanded", "Archivo", sans-serif;
+         font-size: 13pt; text-transform: uppercase; letter-spacing: 0.03em;
+         margin: 18px 0 6px; border-bottom: 1px solid #9DA7AF; padding-bottom: 2px; }
+    .muted { color: #55636E; }
+    .deck-section { break-inside: avoid; }
+    .kv { margin: 2px 0; }
+    .kv b { display: inline-block; min-width: 9em; }
+    .decision { break-inside: avoid; margin: 4px 0; }
+    .decision .q { font-weight: 600; }
+    .decision .why { color: #55636E; }
+    table.ros { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+    table.ros th { text-align: left; border-bottom: 1px solid #162029;
+                   font-family: "Archivo Expanded", sans-serif; font-size: 9pt;
+                   text-transform: uppercase; padding: 2px 6px; }
+    table.ros td { border-bottom: 1px solid #E2E8EE; padding: 3px 6px;
+                   vertical-align: top; }
+    .day-head { font-family: "Archivo Expanded", sans-serif; font-weight: 700;
+                font-size: 11pt; margin: 10px 0 2px; }
+    .print-ros-conflict {
+      color: #D8A24C; font-weight: 600;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .vip { break-inside: avoid; padding: 2px 0; }
+    .tier { color: #55636E; font-size: 9.5pt; }
+    .creds { font-size: 9.5pt; color: #55636E; border: 1px solid #E2E8EE;
+             padding: 6px 8px; }
+    ul.amenities { margin: 2px 0; padding-left: 1.2em; }
+    @media print {
+      body { font-size: 11pt; }
+      .deck-section, .decision, .vip, table.ros tr { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <h1>{{ event.name }}</h1>
+  <div class="muted">Event Playbook — day-of operational reference</div>
+
+  <div class="deck-section">
+    <h2>Event</h2>
+    <div class="kv"><b>Owner</b> {{ owner or "Not set" }}</div>
+    <div class="kv"><b>Location</b> {{ event.location or "Not set" }}</div>
+    <div class="kv"><b>Dates</b> {{ schedule or "Not scheduled yet" }}</div>
+    <div class="kv"><b>Attendance</b> {{ event.audience_estimate if event.audience_estimate else "Not set" }}</div>
+  </div>
+
+  <div class="deck-section">
+    <h2>Decisions</h2>
+    {% for section in sections %}
+      {% if section.decision and not section.decision.is_pending %}
+        <div class="decision">
+          <span class="q">{{ section.title }}:</span>
+          {{ section.decision.display_label or section.decision.chosen_option.label }}
+          <span class="why">— {{ section.decision.chosen_option.reasoning or "—" }}</span>
+        </div>
+      {% endif %}
+    {% endfor %}
+    {% set oq = sections | selectattr("decision.is_pending") | list | length %}
+    {% if oq %}<div class="muted">Open questions: {{ oq }}</div>{% endif %}
+  </div>
+
+  <div class="deck-section">
+    <h2>Venue</h2>
+    {% if venue_opt_out %}
+      <div class="kv">Venue established externally: {{ venue_opt_out }}</div>
+    {% elif venue_label %}
+      <div class="kv"><b>Name</b> {{ venue_label }}</div>
+      {% if venue_capacity %}<div class="kv"><b>Capacity</b> {{ venue_capacity }}</div>{% endif %}
+      {% if venue_amenities %}
+        <ul class="amenities">
+          {% for a in venue_amenities %}<li>{{ a }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    {% else %}
+      <div class="kv">Not set</div>
+    {% endif %}
+  </div>
+
+  <div class="deck-section">
+    <h2>Run of show</h2>
+    {% for day in ros_days %}
+      <div class="day-head">{{ day.day }}</div>
+      <table class="ros">
+        <tr><th>Time</th><th>Segment</th><th>Track</th><th>Owner(s)</th><th>Location</th></tr>
+        {% for seg in day.segments %}
+          <tr>
+            <td>{{ seg.start_time }}–{{ seg.end_time }}</td>
+            <td>{{ seg.title }}</td>
+            <td>{{ seg.track }}</td>
+            <td>{{ seg.owners }}</td>
+            <td>{{ seg.location or "—" }}</td>
+          </tr>
+          {% if conflicts.get(seg.id) %}
+            {% for pid, why in conflicts[seg.id].items() %}
+              <tr><td colspan="5" class="print-ros-conflict">
+                ⚠ {{ owner_label_for(pid) }} double-booked: {{ why }}</td></tr>
+            {% endfor %}
+          {% endif %}
+        {% endfor %}
+      </table>
+    {% endfor %}
+    {% if not ros_days %}<div class="muted">No run-of-show segments yet.</div>{% endif %}
+  </div>
+
+  <div class="deck-section">
+    <h2>Check-in essentials</h2>
+    <div class="kv"><b>VIPs</b></div>
+    {% for v in vips %}
+      <div class="vip">{{ v.name }}{% if v.company %} — {{ v.company }}{% endif %}
+        <span class="tier">· VIP</span></div>
+    {% endfor %}
+    {% if not vips %}<div class="muted">None recorded.</div>{% endif %}
+    <div class="kv"><b>Check-in staff</b> {{ checkin_staff | join(", ") or "Not set" }}</div>
+    <div class="kv muted">Manual check-in: a facilitator can look up an existing
+      invitee by name/email and mark them arrived (logged as method=manual).</div>
+  </div>
+
+  <div class="deck-section">
+    <h2>Spend</h2>
+    {% if spend %}
+      <div class="kv">Claude API spend: ${{ "%.2f"|format(spend) }} (whole cents).</div>
+    {% else %}
+      <div class="kv">None — ran offline.</div>
+    {% endif %}
+  </div>
+
+  <div class="deck-section">
+    <h2>Credentials</h2>
+    <div class="creds">Attendee check-in credentials are issued individually and
+      stored server-side; they are not printed here. At the desk, scan a guest's
+      code or use manual check-in by name/email. Do not print scannable codes or
+      attendee contact details on this shared document.</div>
+  </div>
+</body>
+</html>
