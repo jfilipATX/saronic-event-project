@@ -41,10 +41,12 @@ def init_db(db_path: str = "events.db") -> None:
 def create_event(conn: sqlite3.Connection, event: Event) -> int:
     cur = conn.execute(
         "INSERT INTO events (name, city, state, country, audience_estimate, "
-        "event_type, owner_name, owner_role) VALUES (?,?,?,?,?,?,?,?)",
+        "event_type, owner_name, owner_role, status, is_demo) VALUES "
+        "(?,?,?,?,?,?,?,?,?,?)",
         (event.name, event.city, event.state, event.country or "US",
          event.audience_estimate, event.event_type,
-         event.owner_name, event.owner_role),
+         event.owner_name, event.owner_role, "active",
+         int(bool(event.is_demo))),
     )
     return int(cur.lastrowid)
 
@@ -56,6 +58,77 @@ def get_event(conn: sqlite3.Connection, event_id: int) -> Optional[Event]:
 
 def list_events(conn: sqlite3.Connection) -> List[Event]:
     return [Event(**dict(r)) for r in conn.execute("SELECT * FROM events").fetchall()]
+
+
+# --- P6-1: event lifecycle (complete / archive / delete) -------------------
+def set_event_status(conn: sqlite3.Connection, event_id: int,
+                     status: str) -> None:
+    """Mark an event complete (read-only badge) or reactivate it.
+
+    Complete is a status flag only — the event stays fully usable. Archiving and
+    deletion go through their dedicated functions (they set timestamps).
+    """
+    conn.execute("UPDATE events SET status=? WHERE id=?", (status, event_id))
+
+
+def archive_event(conn: sqlite3.Connection, event_id: int) -> None:
+    """Soft-hide an event. Recoverable via unarchive_event; PII untouched."""
+    conn.execute(
+        "UPDATE events SET status='archived', archived_at=? WHERE id=?",
+        (_now(), event_id),
+    )
+
+
+def unarchive_event(conn: sqlite3.Connection, event_id: int) -> None:
+    """Recover a previously archived event (PII was never touched)."""
+    conn.execute(
+        "UPDATE events SET status='active', archived_at=NULL WHERE id=?",
+        (event_id,),
+    )
+
+
+def delete_event(conn: sqlite3.Connection, event_id: int) -> None:
+    """Anonymized stub: remove from view + destroy PII, keep row for counts.
+
+    Per the user's choice (over 'same as Archive'), Delete is MORE destructive
+    than Archive: attendee + assigned-people PII (names/emails/codes/title/
+    company) is wiped in place (reusing the erased_at erasure pattern), and the
+    event is hidden via status='deleted'. The Event row, decisions, and segments
+    are retained so aggregate counts survive — but no individual identity does.
+    No row is DROPped, so every load_event()-based view keeps resolving.
+    """
+    conn.execute(
+        "UPDATE attendees SET full_name='[removed]', email=NULL, "
+        "checkin_code=NULL, title=NULL, company=NULL, erased_at=? "
+        "WHERE event_id=?",
+        (_now(), event_id),
+    )
+    # Assigned staff names are global Person records; wipe only their assignment
+    # display (role) but keep the join so the roster count is preserved. People
+    # themselves are a shared pool, so we do not erase the Person row.
+    conn.execute(
+        "UPDATE event_staff SET role=NULL WHERE event_id=?", (event_id,)
+    )
+    conn.execute(
+        "UPDATE events SET status='deleted', deleted_at=? WHERE id=?",
+        (_now(), event_id),
+    )
+
+
+def list_events_visible(conn: sqlite3.Connection) -> List[Event]:
+    """Active + complete events — the default list (hidden/archive/deleted
+    surfaced separately by the UI toggle)."""
+    return [Event(**dict(r)) for r in conn.execute(
+        "SELECT * FROM events WHERE status NOT IN ('archived','deleted') "
+        "ORDER BY created_at DESC"
+    ).fetchall()]
+
+
+def list_events_by_status(conn: sqlite3.Connection, status: str) -> List[Event]:
+    return [Event(**dict(r)) for r in conn.execute(
+        "SELECT * FROM events WHERE status=? ORDER BY created_at DESC",
+        (status,),
+    ).fetchall()]
 
 
 def add_attendee(conn: sqlite3.Connection, attendee: Attendee) -> int:
@@ -226,6 +299,10 @@ _ADDED_COLUMNS = (
     ("events", "owner_role", "TEXT"),
     ("events", "state", "TEXT"),
     ("events", "country", "TEXT NOT NULL DEFAULT 'US'"),
+    ("events", "status", "TEXT NOT NULL DEFAULT 'active'"),
+    ("events", "archived_at", "TEXT"),
+    ("events", "deleted_at", "TEXT"),
+    ("events", "is_demo", "INTEGER NOT NULL DEFAULT 0"),
     ("library_images", "backdrop_kind", "TEXT NOT NULL DEFAULT 'unknown'"),
 )
 

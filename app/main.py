@@ -58,6 +58,8 @@ from app.features.venue_search import (
 from app.claude.errors import BudgetExceededError, ClaudeError
 from app.claude.ledger import SpendLedger
 from app.config import CONFIG
+from app.features.example_images import seed_example_images
+from app.features.demo_seed import seed_fleet_week_demo
 from app.features.image_library import (
     classify_backdrop,
     fetch_feed,
@@ -77,6 +79,7 @@ from app.features.run_of_show import (
     seed_standard_day,
     validate_segment,
 )
+import app.features.run_of_show as ros
 from app.features.schedule import (
     describe_schedule,
     event_day_windows,
@@ -347,12 +350,15 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
     def home(request: Request):
         conn = connect()
         try:
-            events = repo.list_events(conn)
+            events = repo.list_events_visible(conn)
+            archived = repo.list_events_by_status(conn, "archived")
+            deleted = repo.list_events_by_status(conn, "deleted")
         finally:
             conn.close()
         return templates.TemplateResponse(
             request, "home.html",
-            {"event": None, "steps": [], "events": events},
+            {"event": None, "steps": [],
+             "events": events, "archived": archived, "deleted": deleted},
         )
 
     @app.post("/events/scrape", response_class=HTMLResponse)
@@ -468,6 +474,53 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
         return RedirectResponse(f"/events/{event_id}/steps/{CHAIN[0]}", status_code=303)
+
+    # --- P6-1: event lifecycle actions (complete / archive / delete) ---------
+    @app.post("/events/{event_id}/complete")
+    def event_complete(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.set_event_status(conn, event_id, "complete")
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{event_id}/playbook", status_code=303)
+
+    @app.post("/events/{event_id}/archive")
+    def event_archive(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.archive_event(conn, event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/events/{event_id}/unarchive")
+    def event_unarchive(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            repo.unarchive_event(conn, event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/events/{event_id}/delete")
+    def event_delete(event_id: int):
+        conn = connect()
+        try:
+            load_event(conn, event_id)
+            # Anonymized stub: wipe PII, hide the row, keep it for counts.
+            repo.delete_event(conn, event_id)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse("/", status_code=303)
+
 
     @app.get("/events/{event_id}/steps/{step_key}", response_class=HTMLResponse)
     def step_page(request: Request, event_id: int, step_key: str):
@@ -768,6 +821,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "deck": deck,
                 "event_id": event_id,
                 "markdown_url": f"/events/{event_id}/slides.md",
+                "pptx_url": f"/events/{event_id}/slides/export.pptx",
             })
         finally:
             conn.close()
@@ -1065,6 +1119,65 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                                      load_event(conn, event_id), view=view)
         finally:
             conn.close()
+
+    @app.get("/events/{event_id}/timeline", response_class=HTMLResponse)
+    def event_timeline(request: Request, event_id: int):
+        """P6-5 — Gantt-style run-of-show across the event's days, each block
+        colour-coded by kind (booth / presentation / visitor / dinner / panel…)."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            segments = repo.list_segments(conn, event_id)
+            timeline = ros.build_timeline(conn, segments)
+            return templates.TemplateResponse(request, "timeline.html", {
+                "event": event,
+                "steps": nav_steps(conn, event_id, "timeline"),
+                "event_id": event_id,
+                "timeline": timeline,
+                "kind_colors": ros.KIND_COLORS,
+                "kind_labels": ros.KIND_LABELS,
+            })
+        finally:
+            conn.close()
+
+    @app.get("/portfolio", response_class=HTMLResponse)
+    def portfolio_view(request: Request):
+        """P6-5 — cross-event overview: every event as a colour-coded card by
+        status, with its run-of-show block-type mix for at-a-glance scanning."""
+        conn = connect()
+        try:
+            events = repo.list_events(conn)
+            cards = []
+            for ev in events:
+                segs = repo.list_segments(conn, ev.id)
+                kind_counts: Dict[str, int] = {}
+                for s in segs:
+                    kind_counts[s.kind] = kind_counts.get(s.kind, 0) + 1
+                cards.append({
+                    "event": ev,
+                    "status": ev.status,
+                    "is_demo": ev.is_demo,
+                    "kind_counts": kind_counts,
+                    "segment_count": len(segs),
+                })
+            return templates.TemplateResponse(request, "portfolio.html", {
+                "events": cards,
+                "kind_colors": ros.KIND_COLORS,
+                "kind_labels": ros.KIND_LABELS,
+            })
+        finally:
+            conn.close()
+
+    @app.post("/demo/load-fleet-week")
+    def demo_load_fleet_week():
+        """P6-6 — seed a fully-fleshed, labeled Fleet Week demo event."""
+        conn = connect()
+        try:
+            eid = seed_fleet_week_demo(conn)
+            conn.commit()
+        finally:
+            conn.close()
+        return RedirectResponse(f"/events/{eid}/playbook", status_code=303)
 
     @app.post("/events/{event_id}/run-of-show/staff/assign")
     def run_of_show_assign_staff(event_id: int, name: str = Form(""),
@@ -1439,6 +1552,22 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             return _visuals_page(request, conn, event_id, event, problem=problem)
         finally:
             conn.close()
+
+    @app.post("/events/{event_id}/visuals/library/seed-examples")
+    def visuals_seed_examples(event_id: int):
+        """Copy the bundled brand-correct example images into this event's
+        library so the demo (or a coordinator) has something to compose against
+        without leaving the app or hitting the network."""
+        conn = connect()
+        try:
+            event = load_event(conn, event_id)
+            added = seed_example_images(conn, event_id,
+                                        _visuals_dir(event_id))
+            conn.commit()
+        finally:
+            conn.close()
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(f"/events/{event_id}/visuals", status_code=303)
 
     @app.post("/events/{event_id}/visuals/library/{image_id}/use")
     def visuals_use_library_image(event_id: int, image_id: int):

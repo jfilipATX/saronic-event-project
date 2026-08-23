@@ -28,13 +28,18 @@
   <p class="muted">
     Import lead images from Saronic's own blog — real vessels, trials and
     announcements, owned outright. Each keeps a link back to its article, so an
-    exported composite can say where its backdrop came from.
+    exported composite can say where its backdrop came from. Or start from the
+    bundled example images.
   </p>
   <form method="post" action="/events/{{ event_id }}/visuals/library/import"
         class="form-row">
     <input class="input" type="url" name="blog_url"
            value="https://medium.com/saronic-technologies">
     <button class="btn-quiet" type="submit">Import from the blog</button>
+  </form>
+  <form method="post" action="/events/{{ event_id }}/visuals/library/seed-examples"
+        class="form-row">
+    <button class="btn-quiet" type="submit">Add example images</button>
   </form>
 
   {% if library %}
@@ -52,6 +57,8 @@
               From the blog:
               <a class="link-accent" href="{{ image.article_url }}"
                  target="_blank" rel="noopener">{{ image.article_title }}</a>
+            {% elif image.origin == 'example' %}
+              Example image (bundled)
             {% else %}
               Uploaded
             {% endif %}

@@ -374,7 +374,11 @@ class TestKindsAndColour:
     """Acceptance check 5 — no scan-state fills anywhere near this feature."""
 
     def test_the_declared_kinds_are_the_spec_set(self):
-        assert set(SEGMENT_KINDS) == {"logistics", "floor", "program", "vip"}
+        # P6-5: colour-coded block types for the timeline / portfolio chart.
+        assert set(SEGMENT_KINDS) == {
+            "logistics", "floor", "program", "vip",
+            "booth", "presentation", "visitor", "dinner", "panel",
+        }
 
 
 class TestRunOfShowUi:

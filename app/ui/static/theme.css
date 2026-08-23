@@ -102,6 +102,29 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 }
 .btn-quiet:hover { color: var(--color-neutral); border-color: var(--color-steel); }
 
+/* destructive action — kept visually distinct from primary/quiet */
+.btn-danger {
+  background: transparent; color: #9b2c2c;
+  border: 1px solid #9b2c2c; border-radius: var(--rounded-md);
+  padding: 8px 12px; cursor: pointer;
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.10em; text-transform: uppercase;
+}
+.btn-danger:hover { background: #9b2c2c; color: #fff; }
+.inline-form { display: inline; margin: 0; }
+.muted-block { margin-top: var(--space-lg); }
+.muted-block summary { cursor: pointer; color: var(--color-steel); }
+
+/* lifecycle + demo badges */
+.tag-demo, .tag-complete, .tag-erased {
+  font-family: var(--font-display); font-stretch: 110%;
+  font-size: 0.625rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 2px 8px; border-radius: var(--rounded-sm); margin-left: 8px; vertical-align: middle;
+}
+.tag-demo { background: var(--color-secondary); color: var(--color-neutral); }
+.tag-complete { background: #1f6f43; color: #fff; }
+.tag-erased { background: #5a3a3a; color: #fff; }
+
 /* compact secondary action inside an option card (e.g. favourite toggle):
    must not compete with the primary Choose button for visual weight */
 .option-card .btn-quiet {
@@ -448,6 +471,31 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 }
 .library-tile { padding: var(--space-md, 0.75rem); }
 .library-thumb { display: block; width: 100%; height: auto; border-radius: 4px; }
+
+/* ── P6-5 timeline (Gantt) + portfolio overview ──── */
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 16px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.75rem; color: var(--color-steel); text-transform: uppercase;
+  letter-spacing: 0.06em; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+.timeline-day { margin-bottom: 18px; }
+.timeline-day-head { font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--color-neutral); margin-bottom: 4px; }
+.timeline-track { position: relative; min-height: 44px;
+  background: repeating-linear-gradient(90deg, #eef2f6 0, #eef2f6 1px, transparent 1px, transparent 12.5%);
+  border: 1px solid #E2E8EE; border-radius: 6px; }
+.timeline-block { position: absolute; top: 4px; bottom: 4px;
+  border-radius: 5px; padding: 3px 6px; overflow: hidden; color: #fff;
+  display: flex; flex-direction: column; justify-content: center; }
+.tb-title { font-weight: 600; font-size: 0.75rem; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.tb-time { font-size: 0.625rem; opacity: 0.9; }
+.tb-conflict { font-size: 0.625rem; font-weight: 700; }
+
+.kind-bars { display: flex; gap: 3px; margin: 6px 0; }
+.kind-bar { height: 12px; border-radius: 2px; display: inline-block; }
 
 /* P5-4 manual venue search: cost estimate + proposal cards. Neutral, not an
    alert — these are informational so the coordinator triggers an informed call. */

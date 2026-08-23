@@ -31,6 +31,18 @@ class Event:
     owner_name: Optional[str] = None
     owner_role: Optional[str] = None
     created_at: Optional[str] = None
+    #: P6-1 lifecycle. status ∈ {active, complete, archived, deleted}.
+    #: - complete: event is done; still fully usable, shown with a badge.
+    #: - archived: soft-hidden, fully recoverable (unarchive); PII untouched.
+    #: - deleted:  anonymized stub — removed from view, attendee/people PII
+    #:   wiped (erased_at pattern), but the row + decisions/segments survive
+    #:   for aggregate counts. Distinct from archived: identities are gone.
+    status: str = "active"
+    archived_at: Optional[str] = None
+    deleted_at: Optional[str] = None
+    #: P6-6 — demo seed flag; surfaced as a "Demo" badge in the events list so
+    #: a loaded example event is clearly distinguishable from real data.
+    is_demo: bool = False
 
     @property
     def location(self) -> str:

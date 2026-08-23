@@ -145,3 +145,38 @@ class TestSpend:
     def test_spend_line_shows_offline(self, client, event_id):
         html = client.get(f"/events/{event_id}/playbook/print").text
         assert "none" in html.lower() and "offline" in html.lower()
+
+
+class TestPrintReadabilityP63:
+    """P6-3 — the day-of playbook must read cleanly on paper, not just render.
+
+    These pin the readability pass: drop the near-always-empty Location column
+    (wasted horizontal space), add a generated footer, and keep PII out.
+    """
+
+    def test_ros_table_drops_empty_location_column(self, client, event_id):
+        conn = _conn()
+        pid = repo.add_person(conn, repo.Person(name="Sam"))
+        repo.assign_staff(conn, event_id, pid, role="Ops")
+        repo.add_segment(conn, repo.Segment(event_id=event_id, title="Briefing",
+            start="2026-03-14 10:00", end="2026-03-14 11:00", track="Ops",
+            owner_ids=[pid]))
+        html = client.get(f"/events/{event_id}/playbook/print").text
+        # The ROS header row no longer carries a Location column.
+        assert "<th>Location</th>" not in html
+        # Sections + segments still present and readable.
+        assert "Run of show" in html
+        assert "Briefing" in html
+
+    def test_footer_marked_day_of_reference(self, client, event_id):
+        html = client.get(f"/events/{event_id}/playbook/print").text
+        assert "day-of reference only" in html
+
+    def test_emails_still_excluded_after_readability_pass(self, client, event_id):
+        conn = _conn()
+        repo.add_attendee(conn, repo.Attendee(event_id=event_id,
+            full_name="Jane Smith", email="jane@x.com", company="State Dept",
+            is_vip=True))
+        html = client.get(f"/events/{event_id}/playbook/print").text
+        assert "jane@x.com" not in html
+        assert "Jane Smith" in html

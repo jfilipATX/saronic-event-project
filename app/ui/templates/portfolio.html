@@ -1,0 +1,51 @@
+<!-- portfolio.html — cross-event overview. Context: events (list of cards),
+     kind_colors, kind_labels. -->
+{% extends "base.html" %}
+{% block title %}Portfolio{% endblock %}
+{% block content %}
+  <p class="eyebrow">All events</p>
+  <h1>Portfolio</h1>
+  <p class="muted">Every event at a glance — status and run-of-show block mix.</p>
+
+  <div class="legend">
+    {% for kind, label in kind_labels.items() %}
+      <span class="legend-item">
+        <span class="swatch" style="background:{{ kind_colors[kind] }}"></span>{{ label }}
+      </span>
+    {% endfor %}
+  </div>
+
+  {% if events %}
+    <ul class="option-list">
+      {% for card in events %}
+        <li class="option-card">
+          <span class="option-label">
+            {{ card.event.name }}
+            {% if card.is_demo %}<span class="tag-demo">Demo</span>{% endif %}
+            {% if card.status == 'complete' %}<span class="tag-complete">Complete</span>{% endif %}
+            {% if card.status == 'archived' %}<span class="tag-erased">Archived</span>{% endif %}
+            {% if card.status == 'deleted' %}<span class="tag-erased">PII erased</span>{% endif %}
+          </span>
+          <div class="option-meta">
+            {% if card.event.location %}<span>{{ card.event.location }}</span>{% endif %}
+            <span>{{ card.segment_count }} run-of-show blocks</span>
+          </div>
+          {% if card.kind_counts %}
+            <div class="kind-bars">
+              {% for kind, n in card.kind_counts.items() %}
+                <span class="kind-bar" title="{{ kind_labels.get(kind, kind) }}: {{ n }}"
+                      style="background:{{ kind_colors.get(kind, '#6E7C88') }}; width:{{ n * 14 }}px;">&nbsp;</span>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <div class="option-actions">
+            <a class="btn-primary" href="/events/{{ card.event.id }}/playbook">Open playbook</a>
+            <a class="btn-quiet" href="/events/{{ card.event.id }}/timeline">Timeline</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="pending-note">No events yet.</div>
+  {% endif %}
+{% endblock %}
