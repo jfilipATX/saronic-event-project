@@ -564,3 +564,11 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 
 fieldset.form-row { border: none; padding: 0; margin: 0.5rem 0; }
 .checkbox { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.9rem; }
+
+/* ── Concierge chat ──────────────────────────────────────────── */
+.chat-log { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.2rem 0; max-height: 50vh; overflow-y: auto; }
+.chat-bubble { max-width: 80%; padding: 0.6rem 0.9rem; border-radius: 0.6rem; line-height: 1.4; }
+.bubble-user { align-self: flex-end; background: var(--color-tertiary); color: var(--color-neutral); }
+.bubble-assistant { align-self: flex-start; background: var(--color-secondary); color: var(--color-ink); }
+.chat-form { display: flex; gap: 0.6rem; }
+.chat-form .input { flex: 1; }

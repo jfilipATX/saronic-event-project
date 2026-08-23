@@ -1253,6 +1253,39 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
         finally:
             conn.close()
 
+    # ── Concierge: natural-language intake (P8-1) ──────────────────────────
+
+    @app.get("/concierge", response_class=HTMLResponse)
+    def concierge_view(request: Request):
+        """Self-serve conversational intake for an event manager. Starts a
+        fresh demo-free session; the manager picks or creates an event inline."""
+        return templates.TemplateResponse(request, "concierge.html", {
+            "events": _concierge_event_list(),
+        })
+
+    @app.post("/concierge/{event_id}/message")
+    async def concierge_message(event_id: int, request: Request):
+        from app.claude.client import get_client
+        from app.features.concierge import ConciergeSession
+        from fastapi.responses import JSONResponse
+        data = await request.json()
+        user_text = (data.get("text") or "").strip()
+        conn = connect()
+        try:
+            client = get_client(CONFIG, ledger=SpendLedger(conn))
+            session = ConciergeSession(event_id=event_id)
+            reply = session.ask(user_text, client=client, conn=conn)
+        finally:
+            conn.close()
+        return JSONResponse({"text": reply.text, "data": reply.data})
+
+    def _concierge_event_list():
+        conn = connect()
+        try:
+            return repo.list_events_visible(conn)
+        finally:
+            conn.close()
+
     @app.post("/people")
     def people_add(name: str = Form(""), role: str = Form("")):
         """Create a person in the global pool (P5-5). Reuses an existing pool
