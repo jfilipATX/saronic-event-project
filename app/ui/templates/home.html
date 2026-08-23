@@ -1,9 +1,6 @@
 <!-- home.html — event list + create form. extends base.html. -->
 {% extends "base.html" %}
-{% block title %}Saronic Event Tool  <p class="mt-xl muted">
-    <a class="link-accent" href="/usage">Usage &amp; spend</a>
-  </p>
-{% endblock %}
+{% block title %}Saronic Event Tool{% endblock %}
 {% block content %}
   <p class="eyebrow">Event Planning</p>
   <h1>Saronic Event Tool</h1>
@@ -44,11 +41,15 @@
   </form>
 
   {% if events %}
-    <h2>Events in progress</h2>
+    <h2>Events</h2>
     <ul class="option-list">
       {% for e in events %}
         <li class="option-card">
-          <span class="option-label">{{ e.name }}</span>
+          <span class="option-label">
+            {{ e.name }}
+            {% if e.is_demo %}<span class="tag-demo">Demo</span>{% endif %}
+            {% if e.status == 'complete' %}<span class="tag-complete">Complete</span>{% endif %}
+          </span>
           <div class="option-meta">
             {% if e.location %}<span>{{ e.location }}</span>{% endif %}
             {% if e.event_type %}<span>{{ e.event_type }}</span>{% endif %}
@@ -56,6 +57,18 @@
           </div>
           <div class="option-actions">
             <a class="btn-primary" href="/events/{{ e.id }}/playbook">Open playbook</a>
+            {% if e.status != 'complete' %}
+              <form method="post" action="/events/{{ e.id }}/complete" class="inline-form">
+                <button class="btn-quiet" type="submit">Mark complete</button>
+              </form>
+            {% endif %}
+            <form method="post" action="/events/{{ e.id }}/archive" class="inline-form">
+              <button class="btn-quiet" type="submit">Archive</button>
+            </form>
+            <form method="post" action="/events/{{ e.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('Delete this event? Attendee/staff identities will be permanently erased (counts kept).');">
+              <button class="btn-danger" type="submit">Delete</button>
+            </form>
           </div>
         </li>
       {% endfor %}
@@ -64,6 +77,42 @@
     <div class="pending-note">No events yet — create your first one above and the
     tool will stage the decision chain (event type → audience → venue) for you.</div>
   {% endif %}
+
+  {% if archived %}
+    <details class="muted-block">
+      <summary>Archived ({{ archived|length }}) — recoverable, PII intact</summary>
+      <ul class="option-list">
+        {% for e in archived %}
+          <li class="option-card">
+            <span class="option-label">{{ e.name }}{% if e.is_demo %} <span class="tag-demo">Demo</span>{% endif %}</span>
+            <div class="option-actions">
+              <form method="post" action="/events/{{ e.id }}/unarchive" class="inline-form">
+                <button class="btn-quiet" type="submit">Restore</button>
+              </form>
+              <form method="post" action="/events/{{ e.id }}/delete" class="inline-form"
+                    onsubmit="return confirm('Delete this archived event? Identities will be permanently erased.');">
+                <button class="btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
+  {% if deleted %}
+    <details class="muted-block">
+      <summary>Deleted ({{ deleted|length }}) — identities erased, kept for counts</summary>
+      <ul class="option-list">
+        {% for e in deleted %}
+          <li class="option-card">
+            <span class="option-label">{{ e.name }}{% if e.is_demo %} <span class="tag-demo">Demo</span>{% endif %} <span class="tag-erased">PII erased</span></span>
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
   <p class="mt-xl muted">
     <a class="link-accent" href="/usage">Usage &amp; spend</a>
   </p>

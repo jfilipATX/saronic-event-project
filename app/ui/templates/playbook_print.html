@@ -14,7 +14,7 @@
   <meta charset="utf-8">
   <title>Playbook — {{ event.name }}</title>
   <style>
-    @page { size: auto; margin: 1.5cm; }
+    @page { size: auto; margin: 1.2cm; }
     * { box-sizing: border-box; }
     body {
       font-family: "Inter", system-ui, sans-serif;
@@ -26,13 +26,14 @@
          margin: 0 0 4px; }
     h2 { font-family: "Archivo Expanded", "Archivo", sans-serif;
          font-size: 13pt; text-transform: uppercase; letter-spacing: 0.03em;
-         margin: 18px 0 6px; border-bottom: 1px solid #9DA7AF; padding-bottom: 2px; }
+         margin: 16px 0 6px; border-bottom: 1px solid #9DA7AF; padding-bottom: 2px;
+         break-after: avoid; }
     .muted { color: #55636E; }
     .deck-section { break-inside: avoid; }
     .kv { margin: 2px 0; }
     .kv b { display: inline-block; min-width: 9em; }
     .decision { break-inside: avoid; margin: 4px 0; }
-    .decision .q { font-weight: 600; }
+    .decision .q { font-weight: 600; display: inline-block; min-width: 9em; }
     .decision .why { color: #55636E; }
     table.ros { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
     table.ros th { text-align: left; border-bottom: 1px solid #162029;
@@ -41,7 +42,7 @@
     table.ros td { border-bottom: 1px solid #E2E8EE; padding: 3px 6px;
                    vertical-align: top; }
     .day-head { font-family: "Archivo Expanded", sans-serif; font-weight: 700;
-                font-size: 11pt; margin: 10px 0 2px; }
+                font-size: 11pt; margin: 10px 0 2px; break-after: avoid; }
     .print-ros-conflict {
       color: #D8A24C; font-weight: 600;
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -51,9 +52,12 @@
     .creds { font-size: 9.5pt; color: #55636E; border: 1px solid #E2E8EE;
              padding: 6px 8px; }
     ul.amenities { margin: 2px 0; padding-left: 1.2em; }
+    .doc-footer { margin-top: 12px; font-size: 8.5pt; color: #9DA7AF;
+                  border-top: 1px solid #E2E8EE; padding-top: 4px; }
     @media print {
       body { font-size: 11pt; }
       .deck-section, .decision, .vip, table.ros tr { break-inside: avoid; }
+      h2, .day-head { break-after: avoid; }
     }
   </style>
 </head>
@@ -74,7 +78,7 @@
     {% for section in sections %}
       {% if section.decision and not section.decision.is_pending %}
         <div class="decision">
-          <span class="q">{{ section.title }}:</span>
+          <span class="q">{{ section.title }}</span>
           {{ section.decision.display_label or section.decision.chosen_option.label }}
           <span class="why">— {{ section.decision.chosen_option.reasoning or "—" }}</span>
         </div>
@@ -106,18 +110,17 @@
     {% for day in ros_days %}
       <div class="day-head">{{ day.day }}</div>
       <table class="ros">
-        <tr><th>Time</th><th>Segment</th><th>Track</th><th>Owner(s)</th><th>Location</th></tr>
+        <tr><th>Time</th><th>Segment</th><th>Track</th><th>Owner(s)</th></tr>
         {% for seg in day.segments %}
           <tr>
             <td>{{ seg.start_time }}–{{ seg.end_time }}</td>
             <td>{{ seg.title }}</td>
             <td>{{ seg.track }}</td>
             <td>{{ seg.owners }}</td>
-            <td>{{ seg.location or "—" }}</td>
           </tr>
           {% if conflicts.get(seg.id) %}
             {% for pid, why in conflicts[seg.id].items() %}
-              <tr><td colspan="5" class="print-ros-conflict">
+              <tr><td colspan="4" class="print-ros-conflict">
                 ⚠ {{ owner_label_for(pid) }} double-booked: {{ why }}</td></tr>
             {% endfor %}
           {% endif %}
@@ -156,5 +159,7 @@
       code or use manual check-in by name/email. Do not print scannable codes or
       attendee contact details on this shared document.</div>
   </div>
+
+  <div class="doc-footer">Generated playbook for {{ event.name }} — day-of reference only.</div>
 </body>
 </html>
