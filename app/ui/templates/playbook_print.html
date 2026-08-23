@@ -63,6 +63,7 @@
       body { font-size: 12pt; }
       .deck-section, .decision, .vip, table.ros tr { break-inside: avoid; }
       h2, .day-head { break-after: avoid; }
+      .timeline-block { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     }
   </style>
 </head>
@@ -165,6 +166,26 @@
       attendee contact details on this shared document.</div>
   </div>
 
+  <div class="deck-section print-gantt">
+    <h2>Run-of-show timeline (per day)</h2>
+    <p class="muted">Optional wall chart — skip printing this section if not needed on paper.</p>
+    {% for day, blocks in gantt_days.items() %}
+      <div class="timeline-day">
+        <div class="timeline-day-head">{{ day }}</div>
+        <div class="timeline-track">
+          {% for b in blocks %}
+            <div class="timeline-block" style="left:{{ b.left_pct }}%; width:{{ b.width_pct }}%; background:{{ b.color }};">
+              <span class="tb-title">{{ b.title }}</span>
+              <span class="tb-time">{{ b.start_time }}–{{ b.end_time }}</span>
+              {% if b.owners %}<span class="tb-owner">{{ b.owners }}</span>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
   <div class="doc-footer">Generated playbook for {{ event.name }} — day-of reference only.</div>
+
 </body>
 </html>

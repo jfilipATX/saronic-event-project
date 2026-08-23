@@ -157,8 +157,9 @@ def build_timeline(conn, segments: List[Segment]) -> Dict[str, List[dict]]:
         for s, (st, en) in zip(segs, parsed):
             left = (st - lo).total_seconds() / span * 100
             width = max(((en - st).total_seconds() / span * 100), 1.5)
-            owners = ", ".join(
-                (get_person(conn, o).name if get_person(conn, o) else f"Person {o}")
+            owners = " · ".join(
+                (f"{(get_person(conn, o).name)} · {(get_person(conn, o).role or '—')}"
+                 if get_person(conn, o) else f"Person {o}")
                 for o in s.owner_ids
             )
             row.append({

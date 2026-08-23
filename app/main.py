@@ -713,6 +713,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
             owner = (event.owner_name +
                      (f" — {event.owner_role}" if event.owner_role else "")) \
                 if event.owner_name else None
+            gantt_days = ros.build_timeline(conn, segments)
             return templates.TemplateResponse(request, "playbook_print.html", {
                 "event": event,
                 "schedule": describe_schedule(conn, event_id),
@@ -723,6 +724,7 @@ def create_app(db_path: Optional[str] = None) -> FastAPI:
                 "venue_amenities": venue_amenities,
                 "venue_opt_out": venue_opt_out,
                 "ros_days": ros_days,
+                "gantt_days": gantt_days,
                 "conflicts": conflicts,
                 "owner_label_for": owner_label_for,
                 "vips": vips,
