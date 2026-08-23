@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS events (
     starts_at     TEXT,
     ends_at       TEXT,
     owner_name    TEXT,
-    owner_role    TEXT
+    owner_role    TEXT,
+    status        TEXT NOT NULL DEFAULT 'active',
+    archived_at   TEXT,
+    deleted_at    TEXT,
+    is_demo       INTEGER NOT NULL DEFAULT 0
 );
 
 -- P5-2: flexible / multi-day dates. An event is one or more calendar days,
