@@ -328,7 +328,124 @@ def build_exec_pptx(conn, event_id: int, pb, segments,
                                owner_id=owner_id)
     buf = io.BytesIO()
     pres.save(buf)
-    return buf.getvalue()
+    return embed_fonts(buf.getvalue())
+
+
+# --- H1: real brand-font embedding (not just naming) -----------------------
+# python-pptx has no embed API, so we inject the OOXML font parts after save:
+# a ppt/fonts/<name>.ttf part per face, a relationship in the theme's .rels,
+# and an <a:embeddedFont r:id> mapping in the theme fontScheme. A font-less
+# recipient machine then resolves the actual glyphs instead of substituting.
+FONTS_TO_EMBED = (
+    ("Archivo Expanded", "ArchivoExpanded-Bold.ttf", "rIdFontArchivo"),
+    ("Inter", "Inter-Regular.ttf", "rIdFontInter"),
+)
+
+
+def _inject_embedded_font(theme: str, block_tag: str, typeface: str,
+                          rid: str) -> str:
+    """Insert <a:font typeface=...><a:embeddedFont r:id=.../> into a fontScheme
+    block (majorFont/minorFont), right after its <a:cs .../> child."""
+    start = theme.find(f"<a:{block_tag}>")
+    end = theme.find(f"</a:{block_tag}>")
+    if start < 0 or end < 0:
+        return theme
+    block = theme[start:end]
+    anchor = block.find("<a:cs")
+    if anchor < 0:
+        return theme
+    # Position after the closing of the <a:cs .../> element.
+    insertion = anchor
+    depth = 0
+    i = anchor
+    while i < len(block):
+        if block[i] == "<":
+            if block[i:i + 2] == "</":
+                depth -= 1
+                if depth == 0:
+                    insertion = i + len("</a:cs>") if block[i:i + 7] == "</a:cs>" \
+                        else i + block[i:].find(">") + 1
+                    break
+            elif block[i:i + 2] == "/>":
+                depth = 0
+                insertion = i + 2
+                break
+            else:
+                depth += 1
+        i += 1
+    new_elem = (f'<a:font typeface="{typeface}">'
+                f'<a:embeddedFont r:id="{rid}"/></a:font>')
+    return theme[:start] + block[:insertion] + new_elem + block[insertion:] + theme[end:]
+
+
+def embed_fonts(pptx_bytes: bytes) -> bytes:
+    """Return pptx bytes with the brand TTFs embedded as OOXML font parts.
+
+    python-pptx's default theme has no relationships part of its own, so we
+    create ppt/theme/_rels/theme1.xml.rels, register the font parts in
+    [Content_Types].xml, and map each typeface to its embedded part via
+    <a:embeddedFont r:id> in the theme fontScheme.
+    """
+    import zipfile
+    from pathlib import Path
+    assets = Path(__file__).resolve().parent.parent.parent / "assets/fonts"
+    theme_name = "ppt/theme/theme1.xml"
+    rels_name = "ppt/theme/_rels/theme1.xml.rels"
+    ctypes_name = "[Content_Types].xml"
+
+    src = zipfile.ZipFile(io.BytesIO(pptx_bytes))
+    names = src.namelist()
+    theme = src.read(theme_name).decode("utf-8")
+    ctypes = src.read(ctypes_name).decode("utf-8")
+
+    embed = []
+    for typeface, fname, rid in FONTS_TO_EMBED:
+        asset = assets / fname
+        if asset.exists():
+            embed.append((typeface, fname, rid, asset.read_bytes()))
+
+    for typeface, fname, rid, _ in embed:
+        block = "majorFont" if typeface == "Archivo Expanded" else "minorFont"
+        theme = _inject_embedded_font(theme, block, typeface, rid)
+        # Font content-type override (idempotent by extension).
+        if f'Extension="ttf"' not in ctypes:
+            ctypes = ctypes.replace(
+                "</Types>",
+                '<Default Extension="ttf" '
+                'ContentType="application/x-font.ttf"/></Types>')
+
+    # Build the theme rels (created here; the default template has none).
+    rel_lines = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+                '<Relationships xmlns="http://schemas.openxmlformats.org/'
+                'package/2006/relationships">']
+    for typeface, fname, rid, _ in embed:
+        rel_lines.append(
+            f'<Relationship Id="{rid}" '
+            f'Type="http://schemas.openxmlformats.org/officeDocument/'
+            f'2006/relationships/font" Target="fonts/{fname}"/>')
+    rel_lines.append("</Relationships>")
+    rels = "\n".join(rel_lines)
+
+    out = io.BytesIO()
+    dst = zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED)
+    written = set()
+    for item in names:
+        if item == theme_name:
+            dst.writestr(item, theme)
+        elif item == ctypes_name:
+            dst.writestr(item, ctypes)
+        else:
+            dst.writestr(item, src.read(item))
+        written.add(item)
+    # Theme rels: only write if not already present (idempotent re-runs).
+    if rels_name not in written:
+        dst.writestr(rels_name, rels)
+    for typeface, fname, rid, data in embed:
+        part = f"ppt/fonts/{fname}"
+        if part not in written:
+            dst.writestr(part, data)
+    dst.close()
+    return out.getvalue()
 
 
 # --- Helpers used by the test-suite assertions. ---
