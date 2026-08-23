@@ -173,3 +173,38 @@ class TestExportRoute:
         finally:
             os.environ.pop("DB_PATH", None)
 
+
+class TestFontEmbedding:
+    """H1 — the deck must carry the real brand fonts as embedded OOXML parts,
+    not just name them. A font-less recipient machine must resolve the actual
+    glyphs rather than silently substituting. This is the gap Edye caught:
+    asserting `.font.name == 'Archivo Expanded'` passes even with no embedding.
+    """
+
+    def test_archivo_expanded_embedded_with_matching_bytes(self, conn, event):
+        import hashlib, zipfile, io
+        from pathlib import Path
+        blob = pptx.build_exec_pptx(conn, event, pptx.build_playbook(conn, event), [])
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+        font_parts = [n for n in zf.namelist() if n.startswith("ppt/fonts/")
+                      and n.lower().endswith(".ttf")]
+        assert font_parts, "no embedded font part under ppt/fonts/"
+
+        asset = Path(__file__).resolve().parent.parent / \
+            "assets/fonts/ArchivoExpanded-Bold.ttf"
+        expected = hashlib.sha256(asset.read_bytes()).hexdigest()
+        embedded = False
+        for part in font_parts:
+            digest = hashlib.sha256(zf.read(part)).hexdigest()
+            if digest == expected:
+                embedded = True
+        assert embedded, "embedded font bytes do not match ArchivoExpanded-Bold.ttf"
+
+    def test_theme_references_embedded_font(self, conn, event):
+        import zipfile, io
+        blob = pptx.build_exec_pptx(conn, event, pptx.build_playbook(conn, event), [])
+        zf = zipfile.ZipFile(io.BytesIO(blob))
+        theme = zf.read("ppt/theme/theme1.xml").decode("utf-8")
+        assert "embeddedFont" in theme, "theme has no <a:embeddedFont> mapping"
+        assert "Archivo Expanded" in theme
+

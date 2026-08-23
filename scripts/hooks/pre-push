@@ -19,3 +19,16 @@ if ! "$python_bin" "$repo_root/scripts/audit_secrets.py"; then
   echo "Publishing a key is one-way — rotate it rather than force-pushing over it."
   exit 1
 fi
+
+echo "pre-push: checking branch discipline…"
+# Read the push spec from stdin: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if ! "$python_bin" "$repo_root/scripts/check_branch_discipline.py" \
+        "$local_ref" "$local_sha" "$remote_ref" "$remote_sha"; then
+    echo ""
+    echo "PUSH BLOCKED: branch-discipline gate failed (see above)."
+    echo "Merge the branch into main (which passed sweep) instead of pushing"
+    echo "behavioral commits directly to main. Bypass only with --no-verify."
+    exit 1
+  fi
+done
