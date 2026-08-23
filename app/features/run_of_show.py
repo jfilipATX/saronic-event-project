@@ -29,13 +29,35 @@ DEFAULT_TRACKS: tuple[str, ...] = ("Logistics", "Program", "Expo floor", "VIP")
 
 #: Drives colour accents. `track` drives lane placement; the two correlate but
 #: stay independent, so a VIP moment can sit in the Program lane.
-SEGMENT_KINDS: tuple[str, ...] = ("logistics", "floor", "program", "vip")
+SEGMENT_KINDS: tuple[str, ...] = (
+    "logistics", "floor", "program", "vip",
+    "booth", "presentation", "visitor", "dinner", "panel",
+)
 
 KIND_LABELS = {
     "logistics": "Logistics",
     "floor": "Expo floor",
     "program": "Program",
     "vip": "VIP",
+    "booth": "Booth",
+    "presentation": "Presentation",
+    "visitor": "Visitors",
+    "dinner": "Dinner",
+    "panel": "Panel",
+}
+
+#: P6-5 — colour per block kind for the timeline / portfolio chart. Monochrome-
+#: safe: each is a distinct hue, never the brand signal-blue. Keyed by kind.
+KIND_COLORS = {
+    "logistics": "#6E7C88",     # steel
+    "floor": "#3E7C8C",         # teal
+    "program": "#162029",       # ink
+    "vip": "#D8A24C",           # amber (already the conflict accent)
+    "booth": "#4A6FA5",         # blue-slate
+    "presentation": "#7A5BA6",   # violet
+    "visitor": "#5B8C5A",       # green
+    "dinner": "#A65B5B",        # terracotta
+    "panel": "#B07A3C",         # bronze
 }
 
 #: Board columns. Visual snapping only — stored times are never rewritten,
@@ -109,6 +131,51 @@ def conflicts_for(segments: List[Segment]) -> Dict[int, Dict[int, str]]:
                 flags.setdefault(second.id, {})[staff_id] = (
                     f"also on {first.title}")
     return flags
+
+
+def build_timeline(conn, segments: List[Segment]) -> Dict[str, List[dict]]:
+    """P6-5 — Gantt-ready layout: per day, each segment positioned by time.
+
+    Returns {day: [{title, kind, kind_label, color, start_time, end_time,
+    left_pct, width_pct, owners, location, conflict}]}. ``left_pct``/
+    ``width_pct`` are fractions of that day's active window (first start → last
+    end), so the template just sets CSS left/width without re-parsing times.
+    """
+    from app.db.repository import get_person
+    bands: Dict[str, List[Segment]] = group_by_day(segments)
+    out: Dict[str, List[dict]] = {}
+    conflicts = conflicts_for(segments)
+    for day, segs in bands.items():
+        if not segs:
+            out[day] = []
+            continue
+        parsed = [(_parse(s.start), _parse(s.end)) for s in segs]
+        lo = min(p[0] for p in parsed)
+        hi = max(p[1] for p in parsed)
+        span = (hi - lo).total_seconds() or 1
+        row = []
+        for s, (st, en) in zip(segs, parsed):
+            left = (st - lo).total_seconds() / span * 100
+            width = max(((en - st).total_seconds() / span * 100), 1.5)
+            owners = ", ".join(
+                (get_person(conn, o).name if get_person(conn, o) else f"Person {o}")
+                for o in s.owner_ids
+            )
+            row.append({
+                "title": s.title,
+                "kind": s.kind,
+                "kind_label": KIND_LABELS.get(s.kind, s.kind),
+                "color": KIND_COLORS.get(s.kind, "#6E7C88"),
+                "start_time": st.strftime("%H:%M"),
+                "end_time": en.strftime("%H:%M"),
+                "left_pct": round(left, 2),
+                "width_pct": round(width, 2),
+                "location": s.location or "",
+                "owners": owners,
+                "conflict": conflicts.get(s.id) or {},
+            })
+        out[day] = row
+    return out
 
 
 def group_by_day(segments: List[Segment]) -> Dict[str, List[Segment]]:

@@ -1,0 +1,40 @@
+<!-- timeline.html — Gantt-style run of show. Context: event, event_id,
+     timeline ({day: [blocks]}), kind_colors, kind_labels. -->
+{% extends "base.html" %}
+{% block title %}Timeline — {{ event.name }}{% endblock %}
+{% block content %}
+  <p class="eyebrow">Run of show</p>
+  <h1>{{ event.name }} — Timeline</h1>
+  <p class="muted">Every block positioned by time, colour-coded by type.</p>
+
+  <div class="legend">
+    {% for kind, label in kind_labels.items() %}
+      <span class="legend-item">
+        <span class="swatch" style="background:{{ kind_colors[kind] }}"></span>{{ label }}
+      </span>
+    {% endfor %}
+  </div>
+
+  {% for day, blocks in timeline.items() %}
+    <div class="timeline-day">
+      <div class="timeline-day-head">{{ day }}</div>
+      <div class="timeline-track">
+        {% for b in blocks %}
+          <div class="timeline-block" title="{{ b.title }} ({{ b.start_time }}–{{ b.end_time }}){% if b.owners %} · {{ b.owners }}{% endif %}"
+               style="left:{{ b.left_pct }}%; width:{{ b.width_pct }}%; background:{{ b.color }};">
+            <span class="tb-title">{{ b.title }}</span>
+            <span class="tb-time">{{ b.start_time }}–{{ b.end_time }}</span>
+            {% if b.conflict %}
+              <span class="tb-conflict">⚠ double-booked</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+  {% if not timeline %}
+    <div class="pending-note">No run-of-show segments yet.</div>
+  {% endif %}
+
+  <p class="mt-xl muted"><a class="link-accent" href="/events/{{ event_id }}/run-of-show">Edit run of show</a></p>
+{% endblock %}
