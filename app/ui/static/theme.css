@@ -242,6 +242,7 @@ h2 { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: var(--space-l
 /* ── utilities ─────────────────────────────────────────────── */
 .link-accent { color: var(--color-tertiary); }
 .mt-xl { margin-top: var(--space-xl); }
+.mb-lg { margin-bottom: var(--space-lg); }
 .nav-sub { font-size: 0.875rem; margin: 0; }
 
 /* ── stacked form (run-of-show segment form etc.) ─────────── */

@@ -5,6 +5,11 @@
   <p class="eyebrow">Presentation</p>
   <h1>{{ deck.event_name }}</h1>
 
+  <div class="option-actions mb-lg">
+    <a class="btn-primary" href="{{ pptx_url }}">Download PowerPoint (.pptx)</a>
+    <a class="btn-quiet" href="{{ markdown_url }}">Export outline (Markdown)</a>
+  </div>
+
   {% if deck.is_draft %}
     <div class="pending-note">
       <strong>DRAFT</strong> — decisions are still open, so this deck reflects an
