@@ -59,6 +59,7 @@
                  target="_blank" rel="noopener">{{ image.article_title }}</a>
             {% elif image.origin == 'example' %}
               Example image (bundled)
+              {% if image.caption %}<span class="img-caption"> — {{ image.caption }}</span>{% endif %}
             {% else %}
               Uploaded
             {% endif %}

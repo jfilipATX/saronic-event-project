@@ -43,7 +43,8 @@ _EMU_H = Inches(7.5)
 
 def _asset(path: str) -> str:
     import os
-    return os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
+    # exec_pptx.py lives at app/features/; repo root is three levels up.
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), path)
 
 
 def build_playbook(conn, event_id: int):
@@ -76,15 +77,26 @@ def _textbox(s, left, top, width, height, anchor=MSO_ANCHOR.TOP):
 
 
 def _wordmark(s, light: bool):
-    """Monochrome Saronic symbol, top-left. Role-named asset, never a colored
-    lockup."""
-    from pptx.util import Emu
-    logo = (_asset("assets/press-kit/Logos/Saronic_Logo_Symbol--Light.png")
+    """Monochrome Saronic FULL wordmark (not just the symbol), top-left.
+    Role-named asset, never a colored lockup. DESIGN.md: wordmark is strictly
+    monochrome; signal-blue is product-UI-only and must not appear in the deck."""
+    logo = (_asset("assets/press-kit/Logos/Saronic_Logo_Full--Light.png")
             if light else
-            _asset("assets/press-kit/Logos/Saronic_Logo_Symbol--Dark.png"))
+            _asset("assets/press-kit/Logos/Saronic_Logo_Full--Dark.png"))
     import os
     if os.path.exists(logo):
-        s.shapes.add_picture(logo, Inches(0.5), Inches(0.4), height=Inches(0.5))
+        s.shapes.add_picture(logo, Inches(0.5), Inches(0.45), height=Inches(0.55))
+
+
+def _footer_wordmark(s, dark: bool = True):
+    """Small monochrome wordmark footer on content slides (light bg -> dark
+    mark) so every slide carries Saronic branding without eating body space."""
+    logo = (_asset("assets/press-kit/Logos/Saronic_Logo_Full--Dark.png")
+            if dark else
+            _asset("assets/press-kit/Logos/Saronic_Logo_Full--Light.png"))
+    import os
+    if os.path.exists(logo):
+        s.shapes.add_picture(logo, Inches(11.4), Inches(6.95), height=Inches(0.42))
 
 
 def _owner_label(conn, person_id: int) -> str:
@@ -102,13 +114,13 @@ def _schedule_line(pb) -> str:
 
 
 def _head(s, text: str) -> None:
-    tb, tf = _textbox(s, Inches(0.8), Inches(0.5), Inches(11.7), Inches(0.8))
+    tb, tf = _textbox(s, Inches(0.6), Inches(0.5), Inches(12.1), Inches(0.8))
     _set_font(tf.paragraphs[0].add_run(), _FONT_HEAD, 26, _INK, bold=True)
     tf.paragraphs[0].runs[0].text = text
 
 
 def _kv(s, rows, top) -> None:
-    tb, tf = _textbox(s, Inches(0.8), top, Inches(11.7), Inches(5.0))
+    tb, tf = _textbox(s, Inches(0.6), top, Inches(12.1), Inches(5.0))
     for i, (k, v) in enumerate(rows):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         _set_font(p.add_run(), _FONT_HEAD, 14, _STEEL, bold=True)
@@ -145,6 +157,7 @@ def _slide_title(pres: Presentation, event: Event, pb) -> None:
 def _slide_overview(pres: Presentation, event: Event, pb) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "OVERVIEW")
+    _footer_wordmark(s)
     rows = [
         ("Event type", event.event_type or "Not set"),
         ("Audience", f"{event.audience_estimate:,}" if event.audience_estimate
@@ -160,7 +173,8 @@ def _slide_overview(pres: Presentation, event: Event, pb) -> None:
 def _slide_decisions(pres: Presentation, event: Event, pb) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "KEY DECISIONS")
-    tb, tf = _textbox(s, Inches(0.8), Inches(1.5), Inches(11.7), Inches(5.6))
+    _footer_wordmark(s)
+    tb, tf = _textbox(s, Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.6))
     sections = pb.sections or []
     first = True
     for sec in sections:
@@ -188,8 +202,9 @@ def _slide_decisions(pres: Presentation, event: Event, pb) -> None:
 def _slide_venue(pres: Presentation, event: Event, pb) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "VENUE")
+    _footer_wordmark(s)
     venue_label, capacity, amenities = _venue_facts(pb)
-    tb, tf = _textbox(s, Inches(0.8), Inches(1.6), Inches(11.7), Inches(5.0))
+    tb, tf = _textbox(s, Inches(0.6), Inches(1.6), Inches(12.1), Inches(5.0))
     p = tf.paragraphs[0]
     _set_font(p.add_run(), _FONT_HEAD, 16, _INK, bold=True)
     p.runs[0].text = venue_label or "Not set"
@@ -225,6 +240,7 @@ def _strip_day(val: str, day: str) -> str:
 def _slide_run_of_show(pres: Presentation, conn, event: Event, segments) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "RUN OF SHOW")
+    _footer_wordmark(s)
     conflicts = ros.conflicts_for(segments or [])
     by_day = ros.group_by_day(segments or [])
     tb, tf = _textbox(s, Inches(0.6), Inches(1.5), Inches(12.1), Inches(5.6))
@@ -259,6 +275,7 @@ def _slide_run_of_show(pres: Presentation, conn, event: Event, segments) -> None
 def _slide_attendance(pres: Presentation, conn, event: Event) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "ATTENDANCE & ACCESS")
+    _footer_wordmark(s)
     attendees = repo.list_attendees(conn, event.id)
     headcount = len(attendees)
     vip = sum(1 for a in attendees if a.is_vip)
@@ -283,7 +300,8 @@ def _slide_attendance(pres: Presentation, conn, event: Event) -> None:
 def _slide_spend(pres: Presentation, conn, event: Event) -> None:
     s = _slide(pres, _NEUTRAL)
     _head(s, "SPEND")
-    tb, tf = _textbox(s, Inches(0.8), Inches(1.6), Inches(11.7), Inches(5.0))
+    _footer_wordmark(s)
+    tb, tf = _textbox(s, Inches(0.6), Inches(1.6), Inches(12.1), Inches(5.0))
     p = tf.paragraphs[0]
     try:
         total = repo.spend_total(conn, event.id)

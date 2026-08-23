@@ -130,6 +130,10 @@ class LibraryImage:
     #: "photo" | "graphic" | "unknown" — composite suitability HINT. A logo
     #: lockup passes the size floor and still makes a poor backdrop.
     backdrop_kind: str = "unknown"
+    #: Coordinator-facing explanation of what this image is / where it should
+    #: be used (e.g. "Saronic Corsair vessel — product hero shot"). Surfaces in
+    #: the library sidebar so a backdrop choice is never a mystery.
+    caption: Optional[str] = None
     created_at: Optional[str] = None
 
 

@@ -15,8 +15,16 @@
     {% endfor %}
   </div>
 
+  {% if timeline %}
+  <nav class="day-jump">
+    {% for day in timeline.keys() %}
+      <a class="day-jump-link" href="#day-{{ day }}">{{ day }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
   {% for day, blocks in timeline.items() %}
-    <div class="timeline-day">
+    <div class="timeline-day" id="day-{{ day }}">
       <div class="timeline-day-head">{{ day }}</div>
       <div class="timeline-track">
         {% for b in blocks %}
@@ -24,6 +32,7 @@
                style="left:{{ b.left_pct }}%; width:{{ b.width_pct }}%; background:{{ b.color }};">
             <span class="tb-title">{{ b.title }}</span>
             <span class="tb-time">{{ b.start_time }}–{{ b.end_time }}</span>
+            {% if b.owners %}<span class="tb-owner">{{ b.owners }}</span>{% endif %}
             {% if b.conflict %}
               <span class="tb-conflict">⚠ double-booked</span>
             {% endif %}
