@@ -14,48 +14,53 @@
   <meta charset="utf-8">
   <title>Playbook — {{ event.name }}</title>
   <style>
-    @page { size: auto; margin: 1.2cm; }
+    @page { size: auto; margin: 1.6cm; }
     * { box-sizing: border-box; }
     body {
       font-family: "Inter", system-ui, sans-serif;
-      color: #162029; background: #fff; font-size: 11pt; line-height: 1.35;
-      margin: 0; padding: 0;
+      color: #162029; background: #fff; font-size: 12.5pt; line-height: 1.5;
+      margin: 0 auto; padding: 0; max-width: 17cm;
     }
     h1 { font-family: "Archivo Expanded", "Archivo", sans-serif;
-         font-size: 18pt; text-transform: uppercase; letter-spacing: 0.04em;
+         font-size: 20pt; text-transform: uppercase; letter-spacing: 0.04em;
          margin: 0 0 4px; }
     h2 { font-family: "Archivo Expanded", "Archivo", sans-serif;
-         font-size: 13pt; text-transform: uppercase; letter-spacing: 0.03em;
-         margin: 16px 0 6px; border-bottom: 1px solid #9DA7AF; padding-bottom: 2px;
+         font-size: 14pt; text-transform: uppercase; letter-spacing: 0.03em;
+         margin: 18px 0 6px; border-bottom: 2px solid #162029; padding-bottom: 3px;
          break-after: avoid; }
-    .muted { color: #55636E; }
-    .deck-section { break-inside: avoid; }
-    .kv { margin: 2px 0; }
-    .kv b { display: inline-block; min-width: 9em; }
-    .decision { break-inside: avoid; margin: 4px 0; }
-    .decision .q { font-weight: 600; display: inline-block; min-width: 9em; }
-    .decision .why { color: #55636E; }
-    table.ros { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
-    table.ros th { text-align: left; border-bottom: 1px solid #162029;
-                   font-family: "Archivo Expanded", sans-serif; font-size: 9pt;
-                   text-transform: uppercase; padding: 2px 6px; }
-    table.ros td { border-bottom: 1px solid #E2E8EE; padding: 3px 6px;
+    /* Muted is for genuinely secondary text only — kept dark enough to read
+       on paper (never the low-contrast greys that fail at small size). */
+    .muted { color: #44525D; }
+    .deck-section { break-inside: avoid; margin-bottom: 6px; }
+    .kv { margin: 3px 0; }
+    .kv b { display: inline-block; min-width: 8.5em; color: #162029; }
+    .decision { break-inside: avoid; margin: 6px 0; }
+    .decision .q { font-weight: 700; display: inline-block; min-width: 8.5em;
+                   color: #162029; }
+    .decision .why { color: #44525D; }
+    table.ros { width: 100%; border-collapse: collapse; font-size: 11.5pt;
+                margin-top: 2px; }
+    table.ros th { text-align: left; border-bottom: 2px solid #162029;
+                   font-family: "Archivo Expanded", sans-serif; font-size: 10pt;
+                   text-transform: uppercase; padding: 4px 8px; color: #162029; }
+    table.ros td { border-bottom: 1px solid #D5DCE2; padding: 6px 8px;
                    vertical-align: top; }
     .day-head { font-family: "Archivo Expanded", sans-serif; font-weight: 700;
-                font-size: 11pt; margin: 10px 0 2px; break-after: avoid; }
+                font-size: 12.5pt; margin: 12px 0 3px; break-after: avoid;
+                color: #162029; }
     .print-ros-conflict {
-      color: #D8A24C; font-weight: 600;
+      color: #D8A24C; font-weight: 700; padding: 4px 8px;
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
-    .vip { break-inside: avoid; padding: 2px 0; }
-    .tier { color: #55636E; font-size: 9.5pt; }
-    .creds { font-size: 9.5pt; color: #55636E; border: 1px solid #E2E8EE;
-             padding: 6px 8px; }
-    ul.amenities { margin: 2px 0; padding-left: 1.2em; }
-    .doc-footer { margin-top: 12px; font-size: 8.5pt; color: #9DA7AF;
-                  border-top: 1px solid #E2E8EE; padding-top: 4px; }
+    .vip { break-inside: avoid; padding: 4px 0; }
+    .tier { color: #44525D; font-size: 10.5pt; }
+    .creds { font-size: 10.5pt; color: #44525D; border: 1px solid #D5DCE2;
+             padding: 8px 10px; line-height: 1.45; }
+    ul.amenities { margin: 3px 0; padding-left: 1.4em; }
+    .doc-footer { margin-top: 14px; font-size: 9.5pt; color: #6E7C88;
+                  border-top: 1px solid #D5DCE2; padding-top: 5px; }
     @media print {
-      body { font-size: 11pt; }
+      body { font-size: 12pt; }
       .deck-section, .decision, .vip, table.ros tr { break-inside: avoid; }
       h2, .day-head { break-after: avoid; }
     }
