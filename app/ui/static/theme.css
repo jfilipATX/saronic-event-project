@@ -51,6 +51,15 @@ body {
   display: flex; flex-direction: column; gap: var(--space-lg);
 }
 .shell-nav .brand img { width: 100%; max-width: 180px; display: block; }
+.shell-nav .nav-link {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 10px 12px; border-radius: var(--rounded-md);
+  color: var(--color-steel); text-decoration: none;
+  font-family: var(--font-display); font-stretch: 125%;
+  font-size: 0.8125rem; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+}
+.shell-nav .nav-link:hover { background: var(--color-surface); color: var(--color-neutral); }
 
 .shell-main {
   flex: 1; padding: var(--space-xl);
