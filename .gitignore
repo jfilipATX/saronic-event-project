@@ -20,9 +20,10 @@ __pycache__/
 venv/
 
 # ── Generated exports ──
-# generated/ is deliberately TRACKED: the exported playbooks and deck outlines
-# are the evidence artifacts that show the tool actually ran. Only the transient
-# real-Claude evidence directory is regenerated per pass.
+# generated/ is MOSTLY tracked: the exported playbooks, deck outlines, and
+# generated/claude-pass/ are evidence artifacts showing the tool actually ran.
+# But the per-event Visuals renders below are machine-regenerated on every
+# Visuals page open — per-machine outputs that do NOT belong in version control.
 /output/
 # Per-event Visuals renders (PNG/JSON composites) are machine-regenerated on
 # every Visuals page open — per-machine outputs that do NOT belong in version
