@@ -1,0 +1,57 @@
+<!-- concierge.html — natural-language intake assistant (P8-1).
+     Context: events (list of Event for the selector). -->
+{% extends "base.html" %}
+{% block title %}Concierge — Saronic Event Tool{% endblock %}
+{% block content %}
+  <p class="eyebrow">Concierge</p>
+  <h1>Tell me about your event</h1>
+  <p class="muted">Describe your venue or run-of-show in plain language. The
+  assistant sets it up and can make edits later — e.g. <em>"Add venue Port Alpha,
+  San Diego, capacity 1200, with catering and security"</em> or
+  <em>"Doors open at 11am"</em>.</p>
+
+  <label class="muted" for="event-select">Event</label>
+  <select id="event-select" class="input">
+    {% for e in events %}
+      <option value="{{ e.id }}">{{ e.name }}{% if e.is_demo %} (Demo){% endif %}</option>
+    {% endfor %}
+  </select>
+
+  <div id="chat" class="chat-log" aria-live="polite"></div>
+
+  <form id="chat-form" class="chat-form">
+    <input id="chat-input" class="input" type="text" placeholder="Type here…" autocomplete="off">
+    <button class="btn-primary" type="submit">Send</button>
+  </form>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('chat-input');
+    const sel = document.getElementById('event-select');
+
+    function addBubble(role, text) {
+      const d = document.createElement('div');
+      d.className = 'chat-bubble ' + (role === 'user' ? 'bubble-user' : 'bubble-assistant');
+      d.textContent = text;
+      chat.appendChild(d);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      addBubble('user', text);
+      input.value = '';
+      const eid = sel.value;
+      const res = await fetch(`/concierge/${eid}/message`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text})
+      });
+      const data = await res.json();
+      addBubble('assistant', data.text);
+    });
+  </script>
+{% endblock %}
